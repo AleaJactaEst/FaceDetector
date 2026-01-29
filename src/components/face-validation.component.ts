@@ -585,7 +585,6 @@ class FaceValidationComponent extends HTMLElement {
 
         switch (this.phase) {
             case 'MOVE_BACK':
-                if (fitPercentage) fitPercentage.style.display = 'block';
                 // Reset far distance frames when starting MOVE_BACK phase
                 this.farDistanceFrames = [];
                 break;

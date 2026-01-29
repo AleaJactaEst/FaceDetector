@@ -168,6 +168,7 @@ video, canvas {
 }
 
 #fit-percentage {
+    display: none;
     width: 60%;
     height: 10px;
     background: #e5e7eb;
