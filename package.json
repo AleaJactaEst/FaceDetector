@@ -7,7 +7,7 @@
   "unpkg": "./dist/face-validation.iife.js",
   "jsdelivr": "./dist/face-validation.iife.js",
   "files": [
-    "dist"
+    "dist", "README.md"
   ],
   "scripts": {
     "dev": "vite",
