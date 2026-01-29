@@ -7,15 +7,6 @@ import FaceFrameService from '../services/face-frame.service.ts';
 import { verifyCapturedFrames } from '../api.ts';
 
 
-// token as input
-// all aws features list
-
-// aws features list:
-// https://ui.docs.amplify.aws/react/connected-components/liveness
-// note: this includes "first step" of validation" where it gives user an overall idea of what is happening
-
-// README
-// now, in purpose of testing, the component is working in a loop ("send validation" => go to first state)
 class FaceValidationComponent extends HTMLElement {
     private capturedFrames: string[] = [];
     private farDistanceFrames: string[] = [];
@@ -45,12 +36,12 @@ class FaceValidationComponent extends HTMLElement {
 
         if (this._modelUrl) await this.init();
 
-        const cancelBtn = this.shadowRoot?.querySelector('#cancel-button') as HTMLButtonElement | null;
+        const cancelBtn = this.shadowRoot?.querySelector<HTMLButtonElement>('#cancel-button');
         if (cancelBtn) {
             cancelBtn.addEventListener('click', () => this.handleUserCancel());
         }
 
-        const tryAgainBtn = this.shadowRoot?.querySelector('#result-try-again-button') as HTMLButtonElement | null;
+        const tryAgainBtn = this.shadowRoot?.querySelector<HTMLButtonElement>('#result-try-again-button');
         if (tryAgainBtn) {
             tryAgainBtn.addEventListener('click', () => this.handleTryAgain());
         }
@@ -97,20 +88,16 @@ class FaceValidationComponent extends HTMLElement {
         if (name === 'token') {
             this._token = newValue;
             // eslint-disable-next-line no-console
-            console.log('Token', this._token);
         }
 
         if (name === 'session-id') {
             // Mirror AWS FaceLivenessDetector: sessionId becomes our token
             this._token = newValue;
-            // eslint-disable-next-line no-console
-            console.log('Session ID (token)', this._token);
         }
 
         if (name === 'model-url') {
             this._modelUrl = newValue;
             // eslint-disable-next-line no-console
-            console.log('Model Url', this._modelUrl);
             if (this.shadowRoot?.innerHTML) await this.init();
         }
 
@@ -336,7 +323,7 @@ class FaceValidationComponent extends HTMLElement {
     }
 
     updateStatus(msgKey: string) {
-        const el = this.shadowRoot?.querySelector('#instruction-text') as HTMLElement | null;
+        const el = this.shadowRoot?.querySelector<HTMLElement>('#instruction-text');
         if (!el) return;
 
         const text = this._displayText[msgKey];
@@ -456,12 +443,12 @@ class FaceValidationComponent extends HTMLElement {
         if (!shadow) return;
 
         // Hide camera and other UI elements
-        const video = shadow.querySelector('video') as HTMLVideoElement | null;
-        const canvas = shadow.querySelector('canvas') as HTMLCanvasElement | null;
-        const infoBox = shadow.querySelector('#info-box') as HTMLElement | null;
-        const verifyingOverlay = shadow.querySelector('#verifying-overlay') as HTMLElement | null;
-        const cancelButtonWrapper = shadow.querySelector('#cancel-button-wrapper') as HTMLElement | null;
-        const resultOverlay = shadow.querySelector('#result-overlay') as HTMLElement | null;
+        const video = shadow.querySelector<HTMLVideoElement>('video');
+        const canvas = shadow.querySelector<HTMLCanvasElement>('canvas');
+        const infoBox = shadow.querySelector<HTMLElement>('#info-box');
+        const verifyingOverlay = shadow.querySelector<HTMLElement>('#verifying-overlay');
+        const cancelButtonWrapper = shadow.querySelector<HTMLElement>('#cancel-button-wrapper');
+        const resultOverlay = shadow.querySelector<HTMLElement>('#result-overlay');
 
         if (video) video.style.display = 'none';
         if (canvas) canvas.style.display = 'none';
@@ -471,10 +458,10 @@ class FaceValidationComponent extends HTMLElement {
 
         if (!resultOverlay) return;
 
-        const resultIcon = shadow.querySelector('#result-icon') as HTMLElement | null;
-        const resultTitle = shadow.querySelector('#result-title') as HTMLElement | null;
-        const resultMessage = shadow.querySelector('#result-message') as HTMLElement | null;
-        const tryAgainButton = shadow.querySelector('#result-try-again-button') as HTMLButtonElement | null;
+        const resultIcon = shadow.querySelector<HTMLElement>('#result-icon');
+        const resultTitle = shadow.querySelector<HTMLElement>('#result-title');
+        const resultMessage = shadow.querySelector<HTMLElement>('#result-message');
+        const tryAgainButton = shadow.querySelector<HTMLButtonElement>('#result-try-again-button');
 
         const isSuccess = result.isReal && !result.validationError;
         const tryAgainText = this._displayText['tryAgainText'] || 'Try Again';
@@ -519,11 +506,11 @@ class FaceValidationComponent extends HTMLElement {
 
     private handleTryAgain() {
         // Hide result overlay
-        const resultOverlay = this.shadowRoot?.querySelector('#result-overlay') as HTMLElement | null;
+        const resultOverlay = this.shadowRoot?.querySelector<HTMLElement>('#result-overlay');
         if (resultOverlay) resultOverlay.style.display = 'none';
 
         // Show cancel button again
-        const cancelButtonWrapper = this.shadowRoot?.querySelector('#cancel-button-wrapper') as HTMLElement | null;
+        const cancelButtonWrapper = this.shadowRoot?.querySelector<HTMLElement>('#cancel-button-wrapper');
         if (cancelButtonWrapper) cancelButtonWrapper.style.display = 'block';
 
         // Reset all state
@@ -542,7 +529,7 @@ class FaceValidationComponent extends HTMLElement {
         this.init();
     }
 
-    captureFrame(type: 'far' | 'close' = 'close') {
+    private captureFrame(type: 'far' | 'close' = 'close') {
         const video = this.shadowRoot?.querySelector('video');
         if (video) {
             const tempCanvas = document.createElement('canvas');
@@ -566,7 +553,7 @@ class FaceValidationComponent extends HTMLElement {
         }
     }
 
-    adjustCanvasDimension() {
+    private adjustCanvasDimension() {
         const video = this.shadowRoot?.querySelector('video');
         const canvas = this.shadowRoot?.querySelector('canvas');
         const ctx = canvas?.getContext('2d')!;
@@ -577,12 +564,12 @@ class FaceValidationComponent extends HTMLElement {
         }
     }
 
-    drawOvalGuide() {
+    private drawOvalGuide() {
         const canvas = this.shadowRoot?.querySelector('canvas');
         FaceFrameService.drawOvalGuide(canvas);
     }
 
-    setPhase(phase: Phase) {
+    private setPhase(phase: Phase) {
         this.phase = phase;
 
         const recordingSign = this.shadowRoot?.querySelector('#recording-sign') as HTMLDivElement;
@@ -659,7 +646,7 @@ class FaceValidationComponent extends HTMLElement {
         }
     }
 
-    setError(errorMsgKey?: string, showRetry: boolean = false) {
+    private setError(errorMsgKey?: string, showRetry: boolean = false) {
         const shadow = this.shadowRoot;
         if (!shadow) return;
 
@@ -713,8 +700,8 @@ class FaceValidationComponent extends HTMLElement {
         const shadow = this.shadowRoot;
         if (!shadow) return;
 
-        const overlay = shadow.querySelector('#camera-permission-overlay') as HTMLElement | null;
-        const text = shadow.querySelector('#camera-permission-text') as HTMLElement | null;
+        const overlay = shadow.querySelector<HTMLElement>('#camera-permission-overlay');
+        const text = shadow.querySelector<HTMLElement>('#camera-permission-text');
 
         if (overlay) {
             overlay.style.display = show ? 'flex' : 'none';
@@ -726,7 +713,7 @@ class FaceValidationComponent extends HTMLElement {
     }
 
     private updateAccessibilityLabel() {
-        const video = this.shadowRoot?.querySelector('video') as HTMLVideoElement | null;
+        const video = this.shadowRoot?.querySelector<HTMLVideoElement>('video');
         if (video && this._displayText['a11yVideoLabelText']) {
             video.setAttribute('aria-label', this._displayText['a11yVideoLabelText']);
         }
@@ -763,11 +750,11 @@ class FaceValidationComponent extends HTMLElement {
         const shadow = this.shadowRoot;
         if (!shadow) return;
 
-        const video = shadow.querySelector('video') as HTMLVideoElement | null;
-        const canvas = shadow.querySelector('canvas') as HTMLCanvasElement | null;
-        const infoBox = shadow.querySelector('#info-box') as HTMLElement | null;
-        const verifyingOverlay = shadow.querySelector('#verifying-overlay') as HTMLElement | null;
-        const verifyingText = shadow.querySelector('#verifying-text') as HTMLElement | null;
+        const video = shadow.querySelector<HTMLVideoElement>('video');
+        const canvas = shadow.querySelector<HTMLCanvasElement>('canvas');
+        const infoBox = shadow.querySelector<HTMLElement>('#info-box');
+        const verifyingOverlay = shadow.querySelector<HTMLElement>('#verifying-overlay');
+        const verifyingText = shadow.querySelector<HTMLElement>('#verifying-text');
 
         if (isVerifying) {
             if (video) video.style.display = 'none';
