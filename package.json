@@ -1,13 +1,14 @@
 {
   "name": "face-wc",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "description": "A web component for face validation using face-api.js",
   "main": "./dist/face-validation.iife.js",
   "unpkg": "./dist/face-validation.iife.js",
   "jsdelivr": "./dist/face-validation.iife.js",
   "files": [
-    "dist", "README.md"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "dev": "vite",
