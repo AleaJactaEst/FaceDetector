@@ -1,13 +1,27 @@
 {
   "name": "face-wc",
-  "private": true,
-  "version": "0.0.0",
+  "version": "0.0.2",
   "type": "module",
+  "description": "A web component for face validation using face-api.js",
+  "main": "./dist/face-validation.iife.js",
+  "unpkg": "./dist/face-validation.iife.js",
+  "jsdelivr": "./dist/face-validation.iife.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
+  "keywords": [
+    "web-component",
+    "face-detection",
+    "face-api",
+    "typescript"
+  ],
+  "author": "Vitaliy Kachan",
+  "license": "MIT",
   "devDependencies": {
     "typescript": "~5.9.3",
     "vite": "^7.2.4"
