@@ -1,91 +1,153 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>face-wc</title>
-  </head>
-  <body>
-    <face-validation 
-      token="test-token" 
-      model-url="/models"
-      on-analysis-complete="onAnalysisComplete"
-      on-error="onError"
-      on-user-cancel="onUserCancel">
-    </face-validation>
-    <script type="module" src="/src/main.ts"></script>
-    <script>
-      // Event handler functions (Angular-style binding)
-      function onAnalysisComplete(result) {
-        console.log('✅ Analysis Complete Event:', result);
-        console.log('  - Is Real:', result.isReal);
-        console.log('  - Estimated Age:', result.estimatedAge);
-        if (result.validationError) {
-          console.log('  - Validation Error:', result.validationError);
-        }
-      }
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face-WC Playground</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f9; }
 
-      function onError(errorDetail) {
-        console.error('❌ Error Event:', errorDetail);
-        console.error('  - Message:', errorDetail.message);
-        if (errorDetail.raw) {
-          console.error('  - Raw Error:', errorDetail.raw);
-        }
-      }
+    /* Toggle UI Styling */
+    .debug-panel {
+      position: fixed; top: 10px; right: 10px; z-index: 10000;
+      background: #222; color: white; padding: 15px;
+      border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .debug-panel label { cursor: pointer; display: flex; align-items: center; gap: 10px; font-weight: bold; }
+    .status-text { font-size: 11px; margin-top: 8px; font-family: monospace; }
 
-      function onUserCancel() {
-        console.log('🚫 User Cancel Event:', 'User cancelled the face validation');
-      }
+    /* Component Container */
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; }
+    face-validation { display: block; width: 100%; min-height: 450px; border-radius: 8px; overflow: hidden; }
+  </style>
+</head>
+<body>
 
-      const text = {
-        cameraNotFoundHeadingText: "Camera Not Found",
-        cameraNotFoundMessageText: "We couldn’t detect a camera. Please check permissions or device connection.",
-        retryCameraPermissionsText: "Retry camera permissions",
-        waitingCameraPermissionText: "Waiting for camera permission...",
-        a11yVideoLabelText: "Liveness detection video",
-        recordingIndicatorText: "Recording...",
-        cancelLivenessCheckText: "Cancel Check",
-        hintMoveFaceFrontOfCameraText: "Move your face into the frame",
-        hintTooManyFacesText: "Only one face allowed",
-        hintFaceDetectedText: "Face detected",
-        hintCanNotIdentifyText: "Face not clearly visible",
-        hintTooCloseText: "Move back",
-        hintTooFarText: "Move closer",
-        hintConnectingText: "Connecting...",
-        hintVerifyingText: "Verifying...",
-        hintCheckCompleteText: "Check complete",
-        hintIlluminationTooBrightText: "Too bright",
-        hintIlluminationTooDarkText: "Too dark",
-        hintIlluminationNormalText: "Good lighting",
-        hintHoldFaceForFreshnessText: "Hold your face still for freshness check",
-        hintCenterFaceText: "Center your face",
-        hintCenterFaceInstructionText: "Align your face in the center of the frame",
-        hintFaceOffCenterText: "Face is off center",
-        hintMatchIndicatorText: "Matching...",
-        errorLabelText: "Error",
-        connectionTimeoutHeaderText: "Connection Timeout",
-        connectionTimeoutMessageText: "We couldn't connect to the server.",
-        timeoutHeaderText: "Session Timeout",
-        timeoutMessageText: "Your session timed out. Please try again.",
-        faceDistanceHeaderText: "Face Too Far or Too Close",
-        faceDistanceMessageText: "Adjust your position and try again.",
-        multipleFacesHeaderText: "Multiple Faces Detected",
-        multipleFacesMessageText: "Only one face should be in the frame.",
-        clientHeaderText: "Client Error",
-        clientMessageText: "An error occurred on your device.",
-        serverHeaderText: "Server Error",
-        serverMessageText: "An error occurred on our side.",
-        landscapeHeaderText: "Landscape Not Supported",
-        landscapeMessageText: "Please rotate your device.",
-        portraitMessageText: "Switch back to portrait mode.",
-        tryAgainText: "Try again",
-      };
+<div class="debug-panel">
+  <label>
+    <input type="checkbox" id="pkg-toggle">
+    Test NPM Package (Dist)
+  </label>
+  <div id="mode-status" class="status-text">Detecting mode...</div>
+</div>
 
-      const fv = document.querySelector('face-validation');
-      if (fv) {
-        fv.setAttribute('display-text', JSON.stringify(text));
-      }
-    </script>
-  </body>
+<div class="container">
+  <h1>Face Validation Test</h1>
+
+  <face-validation
+          token="test-token"
+          model-url="/models"
+          on-analysis-complete="onAnalysisComplete"
+          on-error="onError"
+          on-user-cancel="onUserCancel">
+  </face-validation>
+</div>
+
+<script type="module">
+  const switcher = document.getElementById('pkg-toggle');
+  const status = document.getElementById('mode-status');
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPkgMode = urlParams.get('mode') === 'pkg';
+
+  // Update Toggle State
+  switcher.checked = isPkgMode;
+  status.innerText = isPkgMode ? "LOADING: /dist/face-validation.iife.js" : "LOADING: /src/main.ts (Source)";
+  status.style.color = isPkgMode ? "#4CAF50" : "#2196F3";
+
+  switcher.addEventListener('change', (e) => {
+    if (e.target.checked) urlParams.set('mode', 'pkg');
+    else urlParams.delete('mode');
+    window.location.search = urlParams.toString();
+  });
+
+  // Load correct version
+  if (isPkgMode) {
+    const script = document.createElement('script');
+    script.src = '/dist/face-validation.iife.js';
+    document.head.appendChild(script);
+  } else {
+    // Use the relative path to your Vite entry point
+    import('/src/main.ts');
+  }
+</script>
+
+<script>
+  // Event Handlers
+  function onAnalysisComplete(result) {
+    console.log('✅ Analysis Complete Event:', result);
+    console.log('  - Is Real:', result.isReal);
+    console.log('  - Estimated Age:', result.estimatedAge);
+    if (result.validationError) {
+      console.log('  - Validation Error:', result.validationError);
+    }
+  }
+
+  function onError(errorDetail) {
+    console.error('❌ Error Event:', errorDetail);
+    console.error('  - Message:', errorDetail.message);
+    if (errorDetail.raw) {
+      console.error('  - Raw Error:', errorDetail.raw);
+    }
+  }
+
+
+  function onUserCancel() {
+    console.log('User Cancel Event:', 'User cancelled the face validation');
+  }
+
+  const translations = {
+    cameraNotFoundHeadingText: "Camera Not Found",
+    cameraNotFoundMessageText: "We couldn’t detect a camera. Please check permissions.",
+    retryCameraPermissionsText: "Retry",
+    waitingCameraPermissionText: "Waiting...",
+    a11yVideoLabelText: "Liveness detection video",
+    recordingIndicatorText: "Recording...",
+    cancelLivenessCheckText: "Cancel",
+    hintMoveFaceFrontOfCameraText: "Move face into frame",
+    hintTooManyFacesText: "One face only",
+    hintFaceDetectedText: "Face detected",
+    hintCanNotIdentifyText: "Not visible",
+    hintTooCloseText: "Too close",
+    hintTooFarText: "Too far",
+    hintConnectingText: "Connecting...",
+    hintVerifyingText: "Verifying...",
+    hintCheckCompleteText: "Complete",
+    hintIlluminationTooBrightText: "Too bright",
+    hintIlluminationTooDarkText: "Too dark",
+    hintIlluminationNormalText: "Good light",
+    hintHoldFaceForFreshnessText: "Stay still",
+    hintCenterFaceText: "Center face",
+    hintCenterFaceInstructionText: "Align in center",
+    hintFaceOffCenterText: "Off center",
+    hintMatchIndicatorText: "Matching...",
+    errorLabelText: "Error",
+    connectionTimeoutHeaderText: "Timeout",
+    connectionTimeoutMessageText: "Check connection",
+    timeoutHeaderText: "Expired",
+    timeoutMessageText: "Try again",
+    faceDistanceHeaderText: "Distance Error",
+    faceDistanceMessageText: "Adjust position",
+    multipleFacesHeaderText: "Too many faces",
+    multipleFacesMessageText: "Stay alone in frame",
+    clientHeaderText: "Client Error",
+    clientMessageText: "Check device",
+    serverHeaderText: "Server Error",
+    serverMessageText: "Try later",
+    landscapeHeaderText: "Rotate Device",
+    landscapeMessageText: "Portrait only",
+    portraitMessageText: "Switch to portrait",
+    tryAgainText: "Try again",
+  };
+
+  // Configuration logic
+  customElements.whenDefined('face-validation').then(() => {
+    const fv = document.querySelector('face-validation');
+    if (fv) {
+      fv.setAttribute('display-text', JSON.stringify(translations));
+      console.log('⚙️ Component Initialized & Configured');
+    }
+  });
+</script>
+</body>
 </html>
