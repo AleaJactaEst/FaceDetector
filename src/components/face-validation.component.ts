@@ -15,6 +15,7 @@ class FaceValidationComponent extends HTMLElement {
     private noFaceDetectedInRow = 0;
     private firstRatio = 0;
     private _isRunning = false;
+    // @ts-ignore
     private _token = '';
     private _modelUrl = '';
     private _displayText: Record<string, string> = {};
