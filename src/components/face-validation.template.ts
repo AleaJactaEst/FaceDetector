@@ -1,0 +1,396 @@
+export const FACE_VALIDATION_TEMPLATE = `
+      <style>
+        :host {
+          font-family: Roboto, "Helvetica Neue", sans-serif;
+        }
+
+        .wrapper {
+          position: relative;
+          width: 100%;
+          max-width: 640px;
+          margin: 0 auto;
+          aspect-ratio: 4 / 3;
+          background-color: #ffffff;
+          overflow: hidden;
+          border-radius: 12px;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+        }
+        
+        #error-wrapper {
+            display: none; /* Hidden by default */
+            width: 100%;
+            max-width: 640px;
+            aspect-ratio: 4 / 3;
+            background-color: #1a1a1a;
+            color: white;
+            border-radius: 8px;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .error-content p {
+            font-size: 18px;
+            margin-bottom: 15px;
+            font-family: sans-serif;
+        }
+        
+        .error-content button {
+            background: #2E7088;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .error-content button:hover {
+            background: #3a8ba8;
+        }
+
+        #result-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(107, 114, 128, 0.85);
+            z-index: 25;
+        }
+
+        #result-modal {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.3);
+        }
+
+        #result-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        #result-icon.success {
+            background: #10b981;
+            color: #ffffff;
+        }
+
+        #result-icon.failure {
+            background: #ef4444;
+            color: #ffffff;
+        }
+
+        #result-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 12px;
+        }
+
+        #result-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        #result-try-again-button {
+            width: 100%;
+            background: #00748c;
+            color: #ffffff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: background 0.2s ease;
+        }
+
+        #result-try-again-button:hover {
+            background: #005f73;
+        }
+
+        video, canvas {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover; /* Ensures video fills the area without stretching */
+        }
+        
+        #info-box {
+            position: absolute;
+            width: 100%;
+            top: 16px;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        #instruction-text {
+            background-color: #00748c;
+            color: #ffffff;
+            min-height: 40px;
+            padding: 10px 24px;
+            border-radius: 6px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            box-shadow: 0 2px 4px rgba(15, 23, 42, 0.25);
+            max-width: 80%;
+        }
+        
+        #fit-percentage {
+            width: 60%;
+            height: 10px;
+            background: #e5e7eb;
+            border-radius: 999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #fit-percentage-fill {
+            height: 100%;
+            background: #00748c;
+            border-radius: 999px;
+            width: 0%;
+            transition: width 0.2s ease;
+        }
+        
+        #cancel-button-wrapper {
+          position: absolute;
+          top: 16px;
+          right: 16px;
+          z-index: 15;
+        }
+
+        #cancel-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          border: 2px solid #00748c;
+          background-color: #ffffff;
+          color: #00748c;
+          cursor: pointer;
+          padding: 0;
+          outline: none;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+        }
+
+        #cancel-button:hover {
+          background-color: #f3f4f6;
+        }
+
+        #cancel-button-icon {
+          font-size: 20px;
+          line-height: 1;
+        }
+        
+        #recording-sign {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            padding: 0;
+            border-radius: 4px;
+            z-index: 10;
+        }
+        
+        #red-square {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ef4444;
+            animation: blink 1s infinite;
+        }
+        
+        #rec-text {
+            color: #111827;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+        
+        /* Range Slider Styling */
+        
+        #camera-permission-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          background: rgba(255, 255, 255, 0.94);
+          color: #111827;
+          z-index: 25;
+          font-family: sans-serif;
+          text-align: center;
+          padding: 20px;
+          box-sizing: border-box;
+        }
+
+        #camera-permission-spinner {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          border: 4px solid rgba(15, 23, 42, 0.1);
+          border-top-color: #00748c;
+          animation: spin 1s linear infinite;
+          margin-bottom: 16px;
+        }
+
+        #camera-permission-text {
+          font-size: 18px;
+        }
+
+        #verifying-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          background: rgba(255, 255, 255, 0.94);
+          color: #111827;
+          z-index: 20;
+          font-family: sans-serif;
+          text-align: center;
+          padding: 20px;
+          box-sizing: border-box;
+        }
+
+        #verifying-spinner {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          border: 4px solid rgba(15, 23, 42, 0.1);
+          border-top-color: #00748c;
+          animation: spin 1s linear infinite;
+          margin-bottom: 16px;
+        }
+
+        #verifying-text {
+          font-size: 18px;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        /* On small/mobile screens, push the video down so header/progress/cancel\n+           sit above the camera view instead of overlapping the face. */
+        @media (max-width: 480px) {
+          .wrapper {
+            padding-top: 72px; /* Space for header, progress, and close button */
+          }
+
+          video, canvas {
+            top: 72px;
+            height: calc(100% - 72px);
+          }
+
+          #info-box {
+            top: 12px;
+          }
+
+          #cancel-button-wrapper {
+            top: 12px;
+          }
+
+          #recording-sign {
+            top: 24px;
+          }
+        }
+      </style>
+
+      <div class="wrapper">
+        <video autoplay muted playsinline aria-label=""></video>
+        <canvas></canvas>
+        
+        <div id="cancel-button-wrapper">
+          <button id="cancel-button" type="button" aria-label="Cancel liveness check">
+            <span id="cancel-button-icon">&#x2715;</span>
+          </button>
+        </div>
+
+        <div id="recording-sign">
+            <div id="red-square"></div>
+            <div id="rec-text">Rec</div>
+        </div>
+
+        <div id="info-box">
+          <div id="instruction-text"></div>
+          <div id="fit-percentage">
+            <div id="fit-percentage-fill"></div>
+          </div>
+        </div>
+        
+        <div id="camera-permission-overlay">
+          <div id="camera-permission-spinner"></div>
+          <div id="camera-permission-text"></div>
+        </div>
+
+        <div id="verifying-overlay">
+          <div id="verifying-spinner"></div>
+          <div id="verifying-text"></div>
+        </div>
+        
+        <div id="result-overlay">
+          <div id="result-modal">
+            <div id="result-icon"></div>
+            <div id="result-title"></div>
+            <div id="result-message"></div>
+            <button id="result-try-again-button" type="button"></button>
+          </div>
+        </div>
+        
+        <div id="error-wrapper"></div>
+
+      </div>
+      
+    `;

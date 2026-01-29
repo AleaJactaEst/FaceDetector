@@ -1,0 +1,792 @@
+import * as faceapi from 'face-api.js';
+import { FACE_VALIDATION_TEMPLATE } from './face-validation.template.ts';
+import { FaceDetection } from 'face-api.js';
+import type { Phase } from '../interfaces/interfaces.ts';
+import { FAR_THRESHOLD_MULTIPLIER, NO_FACE_DETECTED_BACKLASH, FRAMES_TO_CAPTURE, FRAMES_FAR_DISTANCE, FRAMES_CLOSE_DISTANCE, INITIAL_DISTANCE_THRESHOLD, CLOSE_DISTANCE_RATIO_MULTIPLIER, CLOSE_DISTANCE_PROGRESS_THRESHOLD } from '../constants/constants.ts';
+import FaceFrameService from '../services/face-frame.service.ts';
+import { verifyCapturedFrames } from '../api.ts';
+
+
+// token as input
+// all aws features list
+
+// aws features list:
+// https://ui.docs.amplify.aws/react/connected-components/liveness
+// note: this includes "first step" of validation" where it gives user an overall idea of what is happening
+
+// README
+// now, in purpose of testing, the component is working in a loop ("send validation" => go to first state)
+class FaceValidationComponent extends HTMLElement {
+    private capturedFrames: string[] = [];
+    private farDistanceFrames: string[] = [];
+    private closeDistanceFrames: string[] = [];
+    private phase: Phase = 'WAITING';
+    private noFaceDetectedInRow = 0;
+    private firstRatio = 0;
+    private _isRunning = false;
+    private _token = '';
+    private _modelUrl = '';
+    private _displayText: Record<string, string> = {};
+    private _isFinal = false;
+    private _onAnalysisComplete: string | null = null;
+    private _onError: string | null = null;
+    private _onUserCancel: string | null = null;
+
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+    }
+
+    async connectedCallback() {
+        this.shadowRoot!.innerHTML = FACE_VALIDATION_TEMPLATE;
+
+        // Update accessibility label
+        this.updateAccessibilityLabel();
+
+        if (this._modelUrl) await this.init();
+
+        const cancelBtn = this.shadowRoot?.querySelector('#cancel-button') as HTMLButtonElement | null;
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => this.handleUserCancel());
+        }
+
+        const tryAgainBtn = this.shadowRoot?.querySelector('#result-try-again-button') as HTMLButtonElement | null;
+        if (tryAgainBtn) {
+            tryAgainBtn.addEventListener('click', () => this.handleTryAgain());
+        }
+
+        // Check orientation on load and resize
+        this.checkOrientation();
+        window.addEventListener('resize', () => this.checkOrientation());
+        window.addEventListener('orientationchange', () => this.checkOrientation());
+    }
+
+    /**
+     * Call a function specified in an attribute (e.g., on-analysis-complete="myFunction")
+     * The function is looked up in the global window scope
+     */
+    private callAttributeFunction(functionName: string | null, ...args: any[]) {
+        if (!functionName) return;
+        
+        try {
+            // Look up function in window scope
+            const func = (window as any)[functionName];
+            if (typeof func === 'function') {
+                func(...args);
+            } else {
+                console.warn(`Function "${functionName}" not found or is not a function`);
+            }
+        } catch (error) {
+            console.error(`Error calling function "${functionName}":`, error);
+        }
+    }
+
+    static get observedAttributes() {
+        // Align with AWS FaceLivenessDetector-style API: sessionId + displayText
+        // - session-id: alias for token
+        // - token: can still be used directly
+        // - model-url: where face-api model is hosted
+        // - display-text: JSON with all translated labels from parent
+        // - on-analysis-complete: function name to call when analysis completes
+        // - on-error: function name to call when error occurs
+        // - on-user-cancel: function name to call when user cancels
+        return ['token', 'session-id', 'model-url', 'display-text', 'on-analysis-complete', 'on-error', 'on-user-cancel'];
+    }
+
+    async attributeChangedCallback (name: string, _: string, newValue: string) {
+        if (name === 'token') {
+            this._token = newValue;
+            // eslint-disable-next-line no-console
+            console.log('Token', this._token);
+        }
+
+        if (name === 'session-id') {
+            // Mirror AWS FaceLivenessDetector: sessionId becomes our token
+            this._token = newValue;
+            // eslint-disable-next-line no-console
+            console.log('Session ID (token)', this._token);
+        }
+
+        if (name === 'model-url') {
+            this._modelUrl = newValue;
+            // eslint-disable-next-line no-console
+            console.log('Model Url', this._modelUrl);
+            if (this.shadowRoot?.innerHTML) await this.init();
+        }
+
+        if (name === 'display-text') {
+            // All UI text must be provided by the parent (for translations).
+            // We intentionally do NOT define any internal defaults here.
+            this._displayText = JSON.parse(newValue);
+            // Update accessibility label when display text changes
+            this.updateAccessibilityLabel();
+        }
+
+        if (name === 'on-analysis-complete') {
+            this._onAnalysisComplete = newValue || null;
+        }
+
+        if (name === 'on-error') {
+            this._onError = newValue || null;
+        }
+
+        if (name === 'on-user-cancel') {
+            this._onUserCancel = newValue || null;
+        }
+    }
+
+    async init() {
+        if (this._isRunning) return;
+
+        const isModelAvailable = await this.loadModels();
+        if (!isModelAvailable) return;
+
+        const cameraStarted = await this.startCamera();
+        if (!cameraStarted) return;
+
+        this._isRunning = true;
+        this.detectFaces();
+    }
+
+    public startVerifying() {
+        this._isRunning = false;
+        this.setVerifying(true);
+        this.updateStatus('hintVerifyingText');
+    }
+
+    public stopVerifying() {
+        this.setVerifying(false);
+        if (!this._isRunning) {
+            this._isRunning = true;
+            this.detectFaces();
+        }
+        this.updateStatus('hintCanNotIdentifyText');
+    }
+
+    async loadModels() {
+        try {
+            await faceapi.nets.tinyFaceDetector.loadFromUri(this._modelUrl);
+            this.setError();
+            return true;
+        } catch (err) {
+            console.error("Model loading failed:", err);
+            this.setError("serverHeaderText");
+            return false;
+        }
+    }
+
+    async startCamera() {
+        const video = this.shadowRoot?.querySelector('video');
+        if (!video) return;
+
+        // Show camera permission overlay
+        this.setCameraPermissionOverlay(true);
+
+        try {
+            video.srcObject = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "user",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
+            
+            // Hide permission overlay
+            this.setCameraPermissionOverlay(false);
+            this.setError();
+
+            return new Promise(resolve => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    resolve(true);
+                };
+            });
+        } catch (err) {
+            console.error("Camera access error:", err);
+            // Hide permission overlay
+            this.setCameraPermissionOverlay(false);
+            this.setError('cameraNotFoundHeadingText', true);
+            return false;
+        }
+    }
+
+    async detectFaces() {
+        const video = this.shadowRoot?.querySelector('video') as HTMLVideoElement;
+        const options = new faceapi.TinyFaceDetectorOptions();
+
+        const loop = async () => {
+            if (!this._isRunning) return;
+
+            this.adjustCanvasDimension();
+            // Draw oval guide in MOVE_FORWARD phase for visual guidance (not used for validation)
+            if (this.phase === 'MOVE_FORWARD') {
+                this.drawOvalGuide();
+            } else {
+                // Clear canvas when not in MOVE_FORWARD phase
+                const canvas = this.shadowRoot?.querySelector('canvas');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                }
+            }
+
+            try {
+                // Detect all faces to check for multiple faces
+                const detections = await faceapi.detectAllFaces(video, options);
+
+                if (detections.length === 0) {
+                    this.handleNoDetection();
+                } else if (detections.length > 1) {
+                    // Multiple faces detected
+                    this.updateStatus('hintTooManyFacesText');
+                    this.noFaceDetectedInRow = 0;
+                } else {
+                    // Single face detected
+                    this.noFaceDetectedInRow = 0;
+                    this.handleLivenessWorkflow(detections[0], video);
+                }
+            } catch (e) {
+                console.error("Detection error:", e);
+            }
+
+            setTimeout(() => requestAnimationFrame(loop), 100);
+        };
+
+        requestAnimationFrame(loop);
+    }
+
+    handleLivenessWorkflow(detection: FaceDetection, video: HTMLVideoElement) {
+        const canvas = this.shadowRoot?.querySelector('canvas');
+        if (canvas) {
+            const faceArea = detection.box.width * detection.box.height;
+            const videoArea = video.videoWidth * video.videoHeight;
+            const ratio = faceArea / videoArea;
+
+            switch (this.phase) {
+                case 'WAITING':
+                    // Initial detection: determine if user is close or far enough
+                    if (!this.firstRatio) {
+                        this.firstRatio = ratio;
+                    }
+
+                    // If user is close (ratio is high), ask them to move back
+                    if (ratio > this.firstRatio * INITIAL_DISTANCE_THRESHOLD) {
+                        this.setPhase('MOVE_BACK');
+                    } else {
+                        // User is already far enough, capture far frames and move to forward phase
+                        if (this.farDistanceFrames.length < FRAMES_FAR_DISTANCE) {
+                            this.captureFrame('far');
+                        } else {
+                            this.setPhase('MOVE_FORWARD');
+                        }
+                    }
+                    break;
+
+                case 'MOVE_BACK':
+                    // User is too close, ask them to move back
+                    this.updateStatus('hintTooCloseText');
+                    
+                    // Update progress bar
+                    this.setDistanceProgression(ratio);
+
+                    // Check if user has moved far enough (ratio decreased to threshold)
+                    const isFarEnough = ratio <= this.firstRatio * FAR_THRESHOLD_MULTIPLIER;
+
+                    if (isFarEnough) {
+                        // Capture far frames
+                        if (this.farDistanceFrames.length < FRAMES_FAR_DISTANCE) {
+                            this.captureFrame('far');
+                        } else {
+                            // Once we have 5 far frames, move to forward phase
+                            this.setPhase('MOVE_FORWARD');
+                        }
+                    }
+
+                    break;
+
+                case 'MOVE_FORWARD':
+                    // User should move closer to camera
+                    this.updateStatus('hintMoveFaceFrontOfCameraText');
+
+                    // Update progress based on distance (closer = higher progress)
+                    // Progress increases as ratio increases (face gets bigger = closer)
+                    const targetCloseRatio = this.firstRatio * CLOSE_DISTANCE_RATIO_MULTIPLIER;
+                    const rawCloseProgress = ((ratio - this.firstRatio) / (targetCloseRatio - this.firstRatio)) * 100;
+                    const closeProgress = Math.min(Math.max(rawCloseProgress, 0), 100);
+                    this.setCloseDistanceProgression(closeProgress);
+
+                    // Capture close frames only when user is close enough
+                    const isCloseEnough = closeProgress >= CLOSE_DISTANCE_PROGRESS_THRESHOLD;
+                    if (isCloseEnough && this.closeDistanceFrames.length < FRAMES_CLOSE_DISTANCE) {
+                        this.captureFrame('close');
+                    }
+
+                    // Finish when we have 5 far + 5 close frames
+                    // (we only ever add close frames when close enough, so no need to re-check here)
+                    if (this.farDistanceFrames.length >= FRAMES_FAR_DISTANCE && 
+                        this.closeDistanceFrames.length >= FRAMES_CLOSE_DISTANCE) {
+                        this.finishVerification();
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    updateStatus(msgKey: string) {
+        const el = this.shadowRoot?.querySelector('#instruction-text') as HTMLElement | null;
+        if (!el) return;
+
+        const text = this._displayText[msgKey];
+        if (text && text.trim().length > 0) {
+            el.textContent = text;
+            el.style.display = 'inline-flex';
+        } else {
+            el.style.display = 'none';
+        }
+    }
+
+    async finishVerification() {
+        // Combine frames: 5 from far distance + 5 from close distance
+        const farFrames = this.farDistanceFrames.slice(0, FRAMES_FAR_DISTANCE);
+        const closeFrames = this.closeDistanceFrames.slice(0, FRAMES_CLOSE_DISTANCE);
+        const framesToSend = [...farFrames, ...closeFrames];
+
+        // Safety: fall back to legacy behavior if something went wrong with phase buckets
+        if (framesToSend.length < FRAMES_TO_CAPTURE) {
+            const allFrames = [...this.capturedFrames];
+            const legacyFrames =
+                allFrames.length > FRAMES_TO_CAPTURE ? allFrames.slice(0, FRAMES_TO_CAPTURE) : allFrames;
+            if (legacyFrames.length === FRAMES_TO_CAPTURE) {
+                // eslint-disable-next-line no-console
+                console.warn('Falling back to legacy framesToSend due to missing phase frames');
+                framesToSend.splice(0, framesToSend.length, ...legacyFrames);
+            }
+        }
+        
+        // Ensure we have at least some frames to send
+        if (framesToSend.length === 0) {
+            console.warn('No frames captured, cannot verify');
+            return;
+        }
+
+        // Start "verifying" state: hide camera, show loader
+        this.startVerifying();
+
+        try {
+            // TODO: externalize initial /verify call (token creation) to host app and
+            // accept verification_token / main_server_url as inputs, similar to AWS FaceLivenessDetector.
+            const result = await verifyCapturedFrames(framesToSend);
+
+            // Stop detection loop
+            this._isRunning = false;
+
+            // High-level event equivalent to FaceLivenessDetector's onAnalysisComplete
+            this.dispatchEvent(new CustomEvent('analysis-complete', {
+                detail: result,
+                bubbles: true,
+                composed: true,
+            }));
+
+            // Call function if specified in attribute
+            this.callAttributeFunction(this._onAnalysisComplete, result);
+
+            // Show result screen
+            this.showResult(result);
+
+            // Once analysis is complete, mark component as "final" so cancel button can be ignored/hidden if desired
+            this._isFinal = true;
+        } catch (error: any) {
+            // Stop detection loop
+            this._isRunning = false;
+
+            // High-level event equivalent to FaceLivenessDetector's onError
+            const errorDetail = {
+                message: error?.message ?? 'Unknown error',
+                raw: error,
+            };
+            this.dispatchEvent(new CustomEvent('error', {
+                detail: errorDetail,
+                bubbles: true,
+                composed: true,
+            }));
+
+            // Call function if specified in attribute
+            this.callAttributeFunction(this._onError, errorDetail);
+
+            // Show error result screen
+            this.showResult({
+                isReal: false,
+                estimatedAge: null,
+                validationError: error?.message ?? 'Unknown error',
+                raw: error,
+            });
+        }
+    }
+
+    private handleUserCancel() {
+        if (this._isFinal) {
+            return;
+        }
+
+        // Stop detection loop and reset internal state
+        this._isRunning = false;
+        this.capturedFrames = [];
+        this.farDistanceFrames = [];
+        this.closeDistanceFrames = [];
+        this.firstRatio = 0;
+        this.noFaceDetectedInRow = 0;
+        this.setVerifying(false);
+        this.setPhase('WAITING');
+
+        // Dispatch high-level event equivalent to FaceLivenessDetector's onUserCancel
+        this.dispatchEvent(new CustomEvent('user-cancel', {
+            bubbles: true,
+            composed: true,
+        }));
+
+        // Call function if specified in attribute
+        this.callAttributeFunction(this._onUserCancel);
+    }
+
+    private showResult(result: { isReal: boolean; estimatedAge: number | null; validationError?: string; raw?: unknown }) {
+        const shadow = this.shadowRoot;
+        if (!shadow) return;
+
+        // Hide camera and other UI elements
+        const video = shadow.querySelector('video') as HTMLVideoElement | null;
+        const canvas = shadow.querySelector('canvas') as HTMLCanvasElement | null;
+        const infoBox = shadow.querySelector('#info-box') as HTMLElement | null;
+        const verifyingOverlay = shadow.querySelector('#verifying-overlay') as HTMLElement | null;
+        const cancelButtonWrapper = shadow.querySelector('#cancel-button-wrapper') as HTMLElement | null;
+        const resultOverlay = shadow.querySelector('#result-overlay') as HTMLElement | null;
+
+        if (video) video.style.display = 'none';
+        if (canvas) canvas.style.display = 'none';
+        if (infoBox) infoBox.style.display = 'none';
+        if (verifyingOverlay) verifyingOverlay.style.display = 'none';
+        if (cancelButtonWrapper) cancelButtonWrapper.style.display = 'none';
+
+        if (!resultOverlay) return;
+
+        const resultIcon = shadow.querySelector('#result-icon') as HTMLElement | null;
+        const resultTitle = shadow.querySelector('#result-title') as HTMLElement | null;
+        const resultMessage = shadow.querySelector('#result-message') as HTMLElement | null;
+        const tryAgainButton = shadow.querySelector('#result-try-again-button') as HTMLButtonElement | null;
+
+        const isSuccess = result.isReal && !result.validationError;
+        const tryAgainText = this._displayText['tryAgainText'] || 'Try Again';
+
+        if (resultIcon) {
+            resultIcon.className = isSuccess ? 'success' : 'failure';
+            resultIcon.textContent = isSuccess ? '✓' : '✗';
+        }
+
+        if (resultTitle) {
+            if (result.validationError) {
+                resultTitle.textContent = this._displayText['timeoutHeaderText'] || 'Verification Failed';
+            } else if (isSuccess) {
+                resultTitle.textContent = this._displayText['hintCheckCompleteText'] || 'Verification Complete';
+            } else {
+                resultTitle.textContent = this._displayText['errorLabelText'] || 'Verification Failed';
+            }
+        }
+
+        if (resultMessage) {
+            if (result.validationError) {
+                resultMessage.textContent = result.validationError;
+            } else if (isSuccess) {
+                const ageText = result.estimatedAge
+                    ? ` Estimated age: ~${Math.round(result.estimatedAge)}.`
+                    : '';
+                resultMessage.textContent = `Liveness verified successfully.${ageText}`;
+            } else {
+                const ageText = result.estimatedAge
+                    ? ` Estimated age: ~${Math.round(result.estimatedAge)}.`
+                    : '';
+                resultMessage.textContent = `Verification failed (possible spoofing detected).${ageText}`;
+            }
+        }
+
+        if (tryAgainButton) {
+            tryAgainButton.textContent = tryAgainText;
+        }
+
+        resultOverlay.style.display = 'flex';
+    }
+
+    private handleTryAgain() {
+        // Hide result overlay
+        const resultOverlay = this.shadowRoot?.querySelector('#result-overlay') as HTMLElement | null;
+        if (resultOverlay) resultOverlay.style.display = 'none';
+
+        // Show cancel button again
+        const cancelButtonWrapper = this.shadowRoot?.querySelector('#cancel-button-wrapper') as HTMLElement | null;
+        if (cancelButtonWrapper) cancelButtonWrapper.style.display = 'block';
+
+        // Reset all state
+        this._isFinal = false;
+        this._isRunning = false;
+        this.capturedFrames = [];
+        this.farDistanceFrames = [];
+        this.closeDistanceFrames = [];
+        this.firstRatio = 0;
+        this.noFaceDetectedInRow = 0;
+        this.phase = 'WAITING';
+
+        // Restart the flow
+        this.setVerifying(false);
+        this.setPhase('WAITING');
+        this.init();
+    }
+
+    captureFrame(type: 'far' | 'close' = 'close') {
+        const video = this.shadowRoot?.querySelector('video');
+        if (video) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            if (tempCtx) {
+                tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+                const imageData = tempCanvas.toDataURL('image/jpeg', 0.9);
+                
+                if (type === 'far') {
+                    this.farDistanceFrames.push(imageData);
+                } else {
+                    this.closeDistanceFrames.push(imageData);
+                }
+                // Keep backward compatibility
+                this.capturedFrames.push(imageData);
+            }
+        }
+    }
+
+    adjustCanvasDimension() {
+        const video = this.shadowRoot?.querySelector('video');
+        const canvas = this.shadowRoot?.querySelector('canvas');
+        const ctx = canvas?.getContext('2d')!;
+
+        if (canvas && ctx && video) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+    }
+
+    drawOvalGuide() {
+        const canvas = this.shadowRoot?.querySelector('canvas');
+        FaceFrameService.drawOvalGuide(canvas);
+    }
+
+    setPhase(phase: Phase) {
+        this.phase = phase;
+
+        const recordingSign = this.shadowRoot?.querySelector('#recording-sign') as HTMLDivElement;
+        if (recordingSign) recordingSign.style.display = 'none';
+
+        const fitPercentage = this.shadowRoot?.querySelector('#fit-percentage') as HTMLDivElement;
+        const fitPercentageFill = this.shadowRoot?.querySelector('#fit-percentage-fill') as HTMLElement;
+        
+        if (fitPercentage) fitPercentage.style.display = 'none';
+        if (fitPercentageFill) fitPercentageFill.style.width = '0%';
+
+
+        switch (this.phase) {
+            case 'MOVE_BACK':
+                if (fitPercentage) fitPercentage.style.display = 'block';
+                // Reset far distance frames when starting MOVE_BACK phase
+                this.farDistanceFrames = [];
+                break;
+            case 'MOVE_FORWARD':
+                recordingSign.style.display = 'flex';
+                if (fitPercentage) fitPercentage.style.display = 'block';
+                // Reset close distance frames when starting MOVE_FORWARD phase
+                this.closeDistanceFrames = [];
+                this.capturedFrames = [];
+                break;
+            default:
+                break;
+
+        }
+    }
+
+    /**
+     * Close distance progression indicates how close the user has moved to the camera.
+     * Progress increases as ratio increases (face gets bigger = closer).
+     */
+    private setCloseDistanceProgression(progress: number) {
+        const progressFill = this.shadowRoot?.querySelector('#fit-percentage-fill') as HTMLElement;
+        if (!progressFill) return;
+
+        const finalPercentage = Math.min(Math.max(progress, 0), 100);
+        progressFill.style.width = `${finalPercentage}%`;
+    }
+
+    /**
+     * Distance progression indicates how far the user has moved away from the camera.
+     * It is based on the face-to-video area ratio measured in the MOVE_BACK phase.
+     * - At the initial ratio (very close), the bar is near 0.
+     * - When the ratio reaches firstRatio * FAR_THRESHOLD_MULTIPLIER, the bar is near 100.
+     */
+    private setDistanceProgression(currentRatio: number) {
+        const progressFill = this.shadowRoot?.querySelector('#fit-percentage-fill') as HTMLElement;
+        if (!progressFill || !this.firstRatio) return;
+
+        const targetRatio = this.firstRatio * FAR_THRESHOLD_MULTIPLIER;
+        const range = Math.max(this.firstRatio - targetRatio, 0.0001);
+
+        const rawResult = ((this.firstRatio - currentRatio) / range) * 100;
+        const finalPercentage = Math.min(Math.max(rawResult, 0), 100);
+
+        progressFill.style.width = `${finalPercentage}%`;
+    }
+
+    private handleNoDetection() {
+        this.noFaceDetectedInRow++;
+        if (this.noFaceDetectedInRow > NO_FACE_DETECTED_BACKLASH) {
+            this.capturedFrames = [];
+            this.farDistanceFrames = [];
+            this.closeDistanceFrames = [];
+            if (this.phase !== 'WAITING') {
+                this.setPhase('WAITING');
+                this.updateStatus('hintCanNotIdentifyText');
+            }
+            this.firstRatio = 0;
+        }
+    }
+
+    setError(errorMsgKey?: string, showRetry: boolean = false) {
+        const shadow = this.shadowRoot;
+        if (!shadow) return;
+
+        const video = shadow.querySelector('video');
+        const canvas = shadow.querySelector('canvas');
+        const infoBox = shadow.querySelector('#info-box') as HTMLElement;
+        const errorWrapper = shadow.querySelector('#error-wrapper') as HTMLElement;
+
+        if (errorMsgKey) {
+            this._isRunning = false; // Stop the loop
+            if (video) video.style.display = 'none';
+            if (canvas) canvas.style.display = 'none';
+            if (infoBox) infoBox.style.display = 'none';
+
+            if (errorWrapper) {
+                errorWrapper.style.display = 'flex';
+                const headingText = this._displayText[errorMsgKey] || errorMsgKey;
+                const messageText = this._displayText[errorMsgKey.replace('HeadingText', 'MessageText')] || '';
+                const retryButton = showRetry && this._displayText['retryCameraPermissionsText'] 
+                    ? `<button id="retry-camera-button" type="button">${this._displayText['retryCameraPermissionsText']}</button>`
+                    : '';
+                
+                errorWrapper.innerHTML = `
+                    <div class="error-content">
+                        <p><strong>${headingText}</strong></p>
+                        ${messageText ? `<p>${messageText}</p>` : ''}
+                        ${retryButton}
+                    </div>
+                `;
+
+                // Add retry button handler if present
+                if (showRetry) {
+                    const retryBtn = errorWrapper.querySelector('#retry-camera-button') as HTMLButtonElement;
+                    if (retryBtn) {
+                        retryBtn.addEventListener('click', () => {
+                            this.init();
+                        });
+                    }
+                }
+            }
+            return;
+        }
+
+        if (errorWrapper) errorWrapper.style.display = 'none';
+        if (video) video.style.display = 'block';
+        if (canvas) canvas.style.display = 'block';
+        if (infoBox) infoBox.style.display = 'flex';
+    }
+
+    private setCameraPermissionOverlay(show: boolean) {
+        const shadow = this.shadowRoot;
+        if (!shadow) return;
+
+        const overlay = shadow.querySelector('#camera-permission-overlay') as HTMLElement | null;
+        const text = shadow.querySelector('#camera-permission-text') as HTMLElement | null;
+
+        if (overlay) {
+            overlay.style.display = show ? 'flex' : 'none';
+        }
+
+        if (text && show) {
+            text.textContent = this._displayText['waitingCameraPermissionText'] || 'Waiting for camera permission...';
+        }
+    }
+
+    private updateAccessibilityLabel() {
+        const video = this.shadowRoot?.querySelector('video') as HTMLVideoElement | null;
+        if (video && this._displayText['a11yVideoLabelText']) {
+            video.setAttribute('aria-label', this._displayText['a11yVideoLabelText']);
+        }
+    }
+
+    private isMobileOrTablet(): boolean {
+        // Check if device is mobile or tablet (not desktop)
+        const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+        const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+        const hasTouchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const isSmallScreen = window.innerWidth <= 1024; // Tablets are typically <= 1024px
+        
+        return isMobileDevice || (hasTouchScreen && isSmallScreen);
+    }
+
+    private checkOrientation() {
+        // Only check orientation on mobile/tablet devices, not desktop
+        if (!this.isMobileOrTablet()) {
+            return;
+        }
+
+        const isLandscape = window.innerWidth > window.innerHeight;
+        if (isLandscape && this._isRunning) {
+            // Show landscape warning only on mobile/tablet
+            this.setError('landscapeHeaderText');
+            this.updateStatus('landscapeMessageText');
+        } else if (!isLandscape && this._isRunning) {
+            // Clear error if back to portrait
+            this.setError();
+        }
+    }
+
+    private setVerifying(isVerifying: boolean) {
+        const shadow = this.shadowRoot;
+        if (!shadow) return;
+
+        const video = shadow.querySelector('video') as HTMLVideoElement | null;
+        const canvas = shadow.querySelector('canvas') as HTMLCanvasElement | null;
+        const infoBox = shadow.querySelector('#info-box') as HTMLElement | null;
+        const verifyingOverlay = shadow.querySelector('#verifying-overlay') as HTMLElement | null;
+        const verifyingText = shadow.querySelector('#verifying-text') as HTMLElement | null;
+
+        if (isVerifying) {
+            if (video) video.style.display = 'none';
+            if (canvas) canvas.style.display = 'none';
+            if (infoBox) infoBox.style.display = 'none';
+            if (verifyingOverlay) verifyingOverlay.style.display = 'flex';
+            if (verifyingText) {
+                verifyingText.textContent = this._displayText['hintVerifyingText'] || 'Verifying...';
+            }
+        } else {
+            if (verifyingOverlay) verifyingOverlay.style.display = 'none';
+            if (video) video.style.display = 'block';
+            if (canvas) canvas.style.display = 'block';
+            if (infoBox) infoBox.style.display = 'flex';
+        }
+    }
+
+}
+
+if (!customElements.get('face-validation')) {
+    customElements.define('face-validation', FaceValidationComponent);
+}

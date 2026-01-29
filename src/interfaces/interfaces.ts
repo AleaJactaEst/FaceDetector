@@ -1,0 +1,1 @@
+export type Phase = 'WAITING' | 'MOVE_BACK' | 'MOVE_FORWARD';

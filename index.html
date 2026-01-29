@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>face-wc</title>
+  </head>
+  <body>
+    <face-validation 
+      token="test-token" 
+      model-url="/models"
+      on-analysis-complete="onAnalysisComplete"
+      on-error="onError"
+      on-user-cancel="onUserCancel">
+    </face-validation>
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Event handler functions (Angular-style binding)
+      function onAnalysisComplete(result) {
+        console.log('✅ Analysis Complete Event:', result);
+        console.log('  - Is Real:', result.isReal);
+        console.log('  - Estimated Age:', result.estimatedAge);
+        if (result.validationError) {
+          console.log('  - Validation Error:', result.validationError);
+        }
+      }
+
+      function onError(errorDetail) {
+        console.error('❌ Error Event:', errorDetail);
+        console.error('  - Message:', errorDetail.message);
+        if (errorDetail.raw) {
+          console.error('  - Raw Error:', errorDetail.raw);
+        }
+      }
+
+      function onUserCancel() {
+        console.log('🚫 User Cancel Event:', 'User cancelled the face validation');
+      }
+
+      const text = {
+        cameraNotFoundHeadingText: "Camera Not Found",
+        cameraNotFoundMessageText: "We couldn’t detect a camera. Please check permissions or device connection.",
+        retryCameraPermissionsText: "Retry camera permissions",
+        waitingCameraPermissionText: "Waiting for camera permission...",
+        a11yVideoLabelText: "Liveness detection video",
+        recordingIndicatorText: "Recording...",
+        cancelLivenessCheckText: "Cancel Check",
+        hintMoveFaceFrontOfCameraText: "Move your face into the frame",
+        hintTooManyFacesText: "Only one face allowed",
+        hintFaceDetectedText: "Face detected",
+        hintCanNotIdentifyText: "Face not clearly visible",
+        hintTooCloseText: "Move back",
+        hintTooFarText: "Move closer",
+        hintConnectingText: "Connecting...",
+        hintVerifyingText: "Verifying...",
+        hintCheckCompleteText: "Check complete",
+        hintIlluminationTooBrightText: "Too bright",
+        hintIlluminationTooDarkText: "Too dark",
+        hintIlluminationNormalText: "Good lighting",
+        hintHoldFaceForFreshnessText: "Hold your face still for freshness check",
+        hintCenterFaceText: "Center your face",
+        hintCenterFaceInstructionText: "Align your face in the center of the frame",
+        hintFaceOffCenterText: "Face is off center",
+        hintMatchIndicatorText: "Matching...",
+        errorLabelText: "Error",
+        connectionTimeoutHeaderText: "Connection Timeout",
+        connectionTimeoutMessageText: "We couldn't connect to the server.",
+        timeoutHeaderText: "Session Timeout",
+        timeoutMessageText: "Your session timed out. Please try again.",
+        faceDistanceHeaderText: "Face Too Far or Too Close",
+        faceDistanceMessageText: "Adjust your position and try again.",
+        multipleFacesHeaderText: "Multiple Faces Detected",
+        multipleFacesMessageText: "Only one face should be in the frame.",
+        clientHeaderText: "Client Error",
+        clientMessageText: "An error occurred on your device.",
+        serverHeaderText: "Server Error",
+        serverMessageText: "An error occurred on our side.",
+        landscapeHeaderText: "Landscape Not Supported",
+        landscapeMessageText: "Please rotate your device.",
+        portraitMessageText: "Switch back to portrait mode.",
+        tryAgainText: "Try again",
+      };
+
+      const fv = document.querySelector('face-validation');
+      if (fv) {
+        fv.setAttribute('display-text', JSON.stringify(text));
+      }
+    </script>
+  </body>
+</html>
