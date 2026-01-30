@@ -5,31 +5,79 @@ import type { Phase } from '../interfaces/interfaces.ts';
 import { FAR_THRESHOLD_MULTIPLIER, NO_FACE_DETECTED_BACKLASH, FRAMES_TO_CAPTURE, FRAMES_FAR_DISTANCE, FRAMES_CLOSE_DISTANCE, INITIAL_DISTANCE_THRESHOLD, CLOSE_DISTANCE_RATIO_MULTIPLIER, CLOSE_DISTANCE_PROGRESS_THRESHOLD } from '../constants/constants.ts';
 import FaceFrameService from '../services/face-frame.service.ts';
 import { verifyCapturedFrames } from '../api.ts';
+import faceValidationStyles from './face-validation.css?inline';
 
+if (typeof window.CustomEvent !== "function") {
+    function CustomEvent(event: string, params: any) {
+        params = params || { bubbles: false, cancelable: false, detail: null };
+        var evt = document.createEvent('CustomEvent');
+        evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+        return evt;
+    }
+    (window as any).CustomEvent = CustomEvent;
+}
 
 class FaceValidationComponent extends HTMLElement {
-    private capturedFrames: string[] = [];
-    private farDistanceFrames: string[] = [];
-    private closeDistanceFrames: string[] = [];
-    private phase: Phase = 'WAITING';
-    private noFaceDetectedInRow = 0;
-    private firstRatio = 0;
-    private _isRunning = false;
+    private capturedFrames: string[];
+    private farDistanceFrames: string[];
+    private closeDistanceFrames: string[];
+    private phase: Phase;
+    private noFaceDetectedInRow;
+    private firstRatio;
+    private _isRunning;
     // @ts-ignore
-    private _token = '';
-    private _modelUrl = '';
-    private _displayText: Record<string, string> = {};
-    private _isFinal = false;
-    private _onAnalysisComplete: string | null = null;
-    private _onError: string | null = null;
-    private _onUserCancel: string | null = null;
+    private _token;
+    private _modelUrl;
+    private _displayText: Record<string, string>;
+    private _isFinal;
+    private _onAnalysisComplete: string | null;
+    private _onError: string | null;
+    private _onUserCancel: string | null;
 
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
+
+        this.capturedFrames = [];
+        this.farDistanceFrames = [];
+        this.closeDistanceFrames = [];
+        this.phase = 'WAITING';
+        this.noFaceDetectedInRow = 0;
+        this.firstRatio = 0;
+        this._isRunning = false;
+            // @ts-ignore
+        this._token = '';
+        this._modelUrl = '';
+        this._displayText = {};
+        this._isFinal = false;
+        this._onAnalysisComplete = null;
+        this._onError = null;
+        this._onUserCancel = null;
     }
 
     async connectedCallback() {
+        const shadow = this.shadowRoot!;
+
+        // Check for modern CSS support (Chrome/Firefox)
+        const supportsAdopted =
+            'adoptedStyleSheets' in Document.prototype &&
+            'replaceSync' in CSSStyleSheet.prototype;
+
+        if (supportsAdopted) {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(faceValidationStyles);
+            shadow.adoptedStyleSheets = [sheet];
+            shadow.innerHTML = FACE_VALIDATION_TEMPLATE;
+        } else {
+            // Fallback for Safari 13 / Edge 18
+            // We inject the <style> tag directly into the innerHTML
+            shadow.innerHTML = `
+            <style>${faceValidationStyles}</style>
+            ${FACE_VALIDATION_TEMPLATE}
+        `;
+        }
+
+
         this.shadowRoot!.innerHTML = FACE_VALIDATION_TEMPLATE;
 
         // Update accessibility label
@@ -59,7 +107,7 @@ class FaceValidationComponent extends HTMLElement {
      */
     private callAttributeFunction(functionName: string | null, ...args: any[]) {
         if (!functionName) return;
-        
+
         try {
             // Look up function in window scope
             const func = (window as any)[functionName];
@@ -124,6 +172,22 @@ class FaceValidationComponent extends HTMLElement {
     }
 
     async init() {
+        // checks if https is used
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            let errorKey;
+
+            if (!window.isSecureContext) {
+                console.error("Face-WC: Camera access requires a Secure Context (HTTPS).");
+                errorKey = 'insecureContextText'; // Add this to translations: "Camera requires HTTPS"
+            } else {
+                console.error("Face-WC: mediaDevices API not supported in this browser.");
+                errorKey = 'browserNotSupportedText';
+            }
+
+            this.setError(errorKey);
+            return;
+        }
+
         if (this._isRunning) return;
 
         const isModelAvailable = await this.loadModels();
@@ -164,6 +228,8 @@ class FaceValidationComponent extends HTMLElement {
     }
 
     async startCamera() {
+        this.stopExistingStream();
+
         const video = this.shadowRoot?.querySelector('video');
         if (!video) return;
 
@@ -174,27 +240,50 @@ class FaceValidationComponent extends HTMLElement {
             video.srcObject = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: "user",
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
+                    width: { ideal: 640, min: 320 },
+                    height: { ideal: 480, min: 240 },
+                    frameRate: { ideal: 15, max: 30 }
                 }
             });
-            
-            // Hide permission overlay
-            this.setCameraPermissionOverlay(false);
-            this.setError();
 
-            return new Promise(resolve => {
-                video.onloadedmetadata = () => {
-                    video.play();
-                    resolve(true);
+            return await new Promise((resolve) => {
+                video.onloadedmetadata = async () => {
+                    try {
+                        await video.play();
+                        this.setCameraPermissionOverlay(false);
+                        this.setError();
+                        resolve(true);
+                    } catch (playError) {
+                        console.error("Autoplay blocked:", playError);
+                        // This happens on iOS if Low Power Mode is on or
+                        // if the browser requires a touch to start video.
+                        this.setCameraPermissionOverlay(false);
+                        this.showManualPlayButton(video, resolve);
+                    }
                 };
             });
-        } catch (err) {
-            console.error("Camera access error:", err);
-            // Hide permission overlay
+        } catch (err: any) {
             this.setCameraPermissionOverlay(false);
-            this.setError('cameraNotFoundHeadingText', true);
+
+            // Specific error handling for better UX
+            if (err.name === 'NotAllowedError') {
+                this.setError('cameraPermissionDeniedText', true); // Add this key to your translations
+            } else {
+                console.error("Camera access error:", err);
+                this.setError('cameraNotFoundHeadingText', true);
+            }
             return false;
+        }
+    }
+
+    private stopExistingStream() {
+        const video = this.shadowRoot?.querySelector('video');
+        if (video && video.srcObject instanceof MediaStream) {
+            video.srcObject.getTracks().forEach(track => {
+                track.stop();
+                console.log(`Stopped track: ${track.label}`);
+            });
+            video.srcObject = null;
         }
     }
 
@@ -275,12 +364,12 @@ class FaceValidationComponent extends HTMLElement {
                 case 'MOVE_BACK':
                     // User is too close, ask them to move back
                     this.updateStatus('hintTooCloseText');
-                    
+
                     // Update progress bar
                     this.setDistanceProgression(ratio);
 
                     // Check if user has moved far enough (ratio decreased to threshold)
-                    const isFarEnough = ratio <= this.firstRatio * FAR_THRESHOLD_MULTIPLIER;
+                    const isFarEnough = ratio <= this.firstRatio * FAR_THRESHOLD_MULTIPLIER && ratio < CLOSE_DISTANCE_PROGRESS_THRESHOLD;
 
                     if (isFarEnough) {
                         // Capture far frames
@@ -300,20 +389,20 @@ class FaceValidationComponent extends HTMLElement {
 
                     // Update progress based on distance (closer = higher progress)
                     // Progress increases as ratio increases (face gets bigger = closer)
-                    const targetCloseRatio = this.firstRatio * CLOSE_DISTANCE_RATIO_MULTIPLIER;
-                    const rawCloseProgress = ((ratio - this.firstRatio) / (targetCloseRatio - this.firstRatio)) * 100;
+                    const rawCloseProgress = ((ratio * 100) / CLOSE_DISTANCE_PROGRESS_THRESHOLD) * 100;
                     const closeProgress = Math.min(Math.max(rawCloseProgress, 0), 100);
                     this.setCloseDistanceProgression(closeProgress);
 
                     // Capture close frames only when user is close enough
-                    const isCloseEnough = closeProgress >= CLOSE_DISTANCE_PROGRESS_THRESHOLD;
-                    if (isCloseEnough && this.closeDistanceFrames.length < FRAMES_CLOSE_DISTANCE) {
+                    const isCloseEnough = (ratio * 100) >= CLOSE_DISTANCE_PROGRESS_THRESHOLD;
+
+                    if (isCloseEnough) {
                         this.captureFrame('close');
                     }
 
                     // Finish when we have 5 far + 5 close frames
                     // (we only ever add close frames when close enough, so no need to re-check here)
-                    if (this.farDistanceFrames.length >= FRAMES_FAR_DISTANCE && 
+                    if (this.farDistanceFrames.length >= FRAMES_FAR_DISTANCE &&
                         this.closeDistanceFrames.length >= FRAMES_CLOSE_DISTANCE) {
                         this.finishVerification();
                     }
@@ -353,7 +442,7 @@ class FaceValidationComponent extends HTMLElement {
                 framesToSend.splice(0, framesToSend.length, ...legacyFrames);
             }
         }
-        
+
         // Ensure we have at least some frames to send
         if (framesToSend.length === 0) {
             console.warn('No frames captured, cannot verify');
@@ -542,7 +631,7 @@ class FaceValidationComponent extends HTMLElement {
                 tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
 
                 const imageData = tempCanvas.toDataURL('image/jpeg', 0.9);
-                
+
                 if (type === 'far') {
                     this.farDistanceFrames.push(imageData);
                 } else {
@@ -557,17 +646,48 @@ class FaceValidationComponent extends HTMLElement {
     private adjustCanvasDimension() {
         const video = this.shadowRoot?.querySelector('video');
         const canvas = this.shadowRoot?.querySelector('canvas');
-        const ctx = canvas?.getContext('2d')!;
 
-        if (canvas && ctx && video) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+        if (canvas && video && video.videoWidth > 0) {
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
         }
     }
 
     private drawOvalGuide() {
         const canvas = this.shadowRoot?.querySelector('canvas');
         FaceFrameService.drawOvalGuide(canvas);
+    }
+
+    private showManualPlayButton(video: HTMLVideoElement, resolve: (v: boolean) => void) {
+        const errorWrapper = this.shadowRoot?.querySelector('#error-wrapper') as HTMLElement;
+        if (!errorWrapper) return;
+
+        this._isRunning = false;
+        errorWrapper.style.display = 'flex';
+
+        // Use a translation for "Click to start camera"
+        const startText = this._displayText['startCameraText'] || 'Tap to Start Camera';
+
+        errorWrapper.innerHTML = `
+        <div class="error-content">
+            <button id="manual-start-button" type="button">${startText}</button>
+        </div>
+    `;
+
+        errorWrapper.querySelector('#manual-start-button')?.addEventListener('click', async () => {
+            try {
+                await video.play();
+                errorWrapper.style.display = 'none';
+                this.setError(); // Clear UI
+                this._isRunning = true;
+                this.detectFaces(); // Restart loop
+                resolve(true);
+            } catch (e) {
+                console.error("Manual play failed", e);
+            }
+        }, { once: true });
     }
 
     private setPhase(phase: Phase) {
@@ -578,7 +698,7 @@ class FaceValidationComponent extends HTMLElement {
 
         const fitPercentage = this.shadowRoot?.querySelector('#fit-percentage') as HTMLDivElement;
         const fitPercentageFill = this.shadowRoot?.querySelector('#fit-percentage-fill') as HTMLElement;
-        
+
         if (fitPercentage) fitPercentage.style.display = 'none';
         if (fitPercentageFill) fitPercentageFill.style.width = '0%';
 
@@ -665,10 +785,10 @@ class FaceValidationComponent extends HTMLElement {
                 errorWrapper.style.display = 'flex';
                 const headingText = this._displayText[errorMsgKey] || errorMsgKey;
                 const messageText = this._displayText[errorMsgKey.replace('HeadingText', 'MessageText')] || '';
-                const retryButton = showRetry && this._displayText['retryCameraPermissionsText'] 
+                const retryButton = showRetry && this._displayText['retryCameraPermissionsText']
                     ? `<button id="retry-camera-button" type="button">${this._displayText['retryCameraPermissionsText']}</button>`
                     : '';
-                
+
                 errorWrapper.innerHTML = `
                     <div class="error-content">
                         <p><strong>${headingText}</strong></p>
@@ -725,7 +845,7 @@ class FaceValidationComponent extends HTMLElement {
         const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
         const hasTouchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         const isSmallScreen = window.innerWidth <= 1024; // Tablets are typically <= 1024px
-        
+
         return isMobileDevice || (hasTouchScreen && isSmallScreen);
     }
 
