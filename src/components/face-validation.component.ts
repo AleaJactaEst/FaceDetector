@@ -60,6 +60,8 @@ class FaceValidationComponent extends HTMLElement {
         this._onAnalysisComplete = null;
         this._onError = null;
         this._onUserCancel = null;
+
+        this.checkOrientation = this.checkOrientation.bind(this);
     }
 
     async connectedCallback() {
@@ -101,8 +103,8 @@ class FaceValidationComponent extends HTMLElement {
 
         // Check orientation on load and resize
         this.checkOrientation();
-        window.addEventListener('resize', () => this.checkOrientation());
-        window.addEventListener('orientationchange', () => this.checkOrientation());
+        window.addEventListener('resize', this.checkOrientation);
+        window.addEventListener('orientationchange', this.checkOrientation);
     }
 
     disconnectedCallback() {
