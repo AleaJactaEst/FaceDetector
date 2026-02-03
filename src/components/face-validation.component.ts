@@ -2,7 +2,7 @@ import * as faceapi from 'face-api.js';
 import { FACE_VALIDATION_TEMPLATE } from './face-validation.template.ts';
 import { FaceDetection } from 'face-api.js';
 import type { Phase } from '../interfaces/interfaces.ts';
-import { FAR_THRESHOLD_MULTIPLIER, NO_FACE_DETECTED_BACKLASH, FRAMES_TO_CAPTURE, FRAMES_FAR_DISTANCE, FRAMES_CLOSE_DISTANCE, INITIAL_DISTANCE_THRESHOLD, CLOSE_DISTANCE_RATIO_MULTIPLIER, CLOSE_DISTANCE_PROGRESS_THRESHOLD } from '../constants/constants.ts';
+import { FAR_THRESHOLD_MULTIPLIER, NO_FACE_DETECTED_BACKLASH, FRAMES_TO_CAPTURE, FRAMES_FAR_DISTANCE, FRAMES_CLOSE_DISTANCE, INITIAL_DISTANCE_THRESHOLD, CLOSE_DISTANCE_PROGRESS_THRESHOLD } from '../constants/constants.ts';
 import FaceFrameService from '../services/face-frame.service.ts';
 import { verifyCapturedFrames } from '../api.ts';
 import faceValidationStyles from './face-validation.css?inline';
