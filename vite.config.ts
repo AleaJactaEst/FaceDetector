@@ -1,45 +1,46 @@
 import { defineConfig } from 'vite';
-import legacy from '@vitejs/plugin-legacy';
 
 export default defineConfig({
-    // This section allows the browser to access the /dist folder
-    // while you are running 'npm run dev'
-    plugins: [
-        legacy({
-            // Targeted specifically for your requirements
-            targets: ['chrome >= 61', 'edge >= 18', 'firefox >= 60', 'safari >= 13'],
-            // Essential polyfills for face-api.js and modern async logic
-            polyfills: [
-                'es.promise',
-                'es.promise.finally',
-                'es.array.from',
-                'es.object.assign',
-                'es.array.includes',
-                'es.string.includes',
-                'es.symbol',
-                'web.dom-collections.for-each'
-            ],
-            modernPolyfills: true
-        }),
-    ],
     server: {
         fs: {
             allow: ['.']
         }
     },
     build: {
-        target: 'es2015', // Critical: ensure code is transpiled to ES6 for Edge 18
+        // 1. Target ES2015 to ensure modern syntax (like classes and arrow functions)
+        // is transpiled down to a level Edge 18 and Safari 13 understand.
+        target: 'es2015',
 
         lib: {
             entry: 'src/main.ts',
-            name: 'FaceValidationWC', // global variable name for IIFE
+            name: 'FaceValidationWC',
             formats: ['iife'],
             fileName: () => 'face-validation.iife.js',
         },
-        rollupOptions: {
-            // DO NOT externalize face-api.js for IIFE to ensure it's plug-and-play
-            external: [],
+
+        // 2. Use Terser instead of Esbuild for minification.
+        // Terser is much more reliable for generating code for older browsers
+        // like Safari 13, which has specific "Safari 10 loop" bugs.
+        minify: 'terser',
+        terserOptions: {
+            ecma: 2015,
+            safari10: true, // Fixes specific bugs in older Safari engines
+            compress: {
+                drop_console: false, // Keep consoles for your debugging
+            }
         },
+
+        rollupOptions: {
+            external: [],
+            output: {
+                // Ensures the IIFE bundle is self-contained
+                inlineDynamicImports: true,
+            }
+        },
+
+        // 3. Prevent CSS from being extracted into a separate .css file
+        // so that your 'import styles from "./styles.css?inline"' works perfectly.
+        cssCodeSplit: false,
         emptyOutDir: true,
     },
 });
