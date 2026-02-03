@@ -17,6 +17,13 @@ if (typeof window.CustomEvent !== "function") {
     (window as any).CustomEvent = CustomEvent;
 }
 
+if (!window.AbortController) {
+    (window as any).AbortController = class AbortController {
+        signal = { aborted: false, addEventListener: () => {} };
+        abort() { this.signal.aborted = true; }
+    };
+}
+
 class FaceValidationComponent extends HTMLElement {
     private capturedFrames: string[];
     private farDistanceFrames: string[];
@@ -77,9 +84,6 @@ class FaceValidationComponent extends HTMLElement {
         `;
         }
 
-
-        this.shadowRoot!.innerHTML = FACE_VALIDATION_TEMPLATE;
-
         // Update accessibility label
         this.updateAccessibilityLabel();
 
@@ -99,6 +103,12 @@ class FaceValidationComponent extends HTMLElement {
         this.checkOrientation();
         window.addEventListener('resize', () => this.checkOrientation());
         window.addEventListener('orientationchange', () => this.checkOrientation());
+    }
+
+    disconnectedCallback() {
+        window.removeEventListener('resize', this.checkOrientation);
+        window.removeEventListener('orientationchange', this.checkOrientation);
+        this.stopExistingStream();
     }
 
     /**
@@ -176,7 +186,11 @@ class FaceValidationComponent extends HTMLElement {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             let errorKey;
 
-            if (!window.isSecureContext) {
+            const isSecure = window.isSecureContext ||
+                window.location.protocol === 'https:' ||
+                window.location.hostname === 'localhost';
+
+            if (!isSecure) {
                 console.error("Face-WC: Camera access requires a Secure Context (HTTPS).");
                 errorKey = 'insecureContextText'; // Add this to translations: "Camera requires HTTPS"
             } else {
@@ -263,6 +277,7 @@ class FaceValidationComponent extends HTMLElement {
                 };
             });
         } catch (err: any) {
+            console.log(err)
             this.setCameraPermissionOverlay(false);
 
             // Specific error handling for better UX
