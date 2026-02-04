@@ -1,6 +1,6 @@
 {
   "name": "face-wc",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "type": "module",
   "description": "A web component for face validation using face-api.js",
   "main": "./dist/face-validation.iife.js",
