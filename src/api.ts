@@ -1,4 +1,3 @@
-const API_URL_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') ?? 'https://demo.yifx.ai';
 const CHALLENGE_TYPE = 'near_far';
 const NEAR_FAR_MIN_RATIO = 1.15;
 const DEFAULT_DETECTOR_NAME = 'yolov11m';
@@ -172,18 +171,18 @@ function analyzeResults(resultData: any): VerificationSummary {
 
 export async function verifyCapturedFrames(
   capturedFrames: string[],
+  apiUrl: string,
   config?: VerificationApiConfig,
 ): Promise<VerificationSummary> {
-  const apiUrlBase = API_URL_BASE;
 
   // 1) Get verification token + main server URL from application server
-  const { verificationToken, mainServerUrl } = await requestVerificationToken(apiUrlBase);
+  const { verificationToken, mainServerUrl } = await requestVerificationToken(apiUrl);
 
   // 2) Send frames to main server
   await sendVerificationToMainServer(mainServerUrl, verificationToken, capturedFrames, config);
 
   // 3) Poll application server for final result
-  const resultData = await pollForResult(apiUrlBase, verificationToken);
+  const resultData = await pollForResult(apiUrl, verificationToken);
 
   // 4) Normalize into a compact summary while still returning raw payload
   return analyzeResults(resultData);

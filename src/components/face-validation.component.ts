@@ -35,6 +35,7 @@ class FaceValidationComponent extends HTMLElement {
     // @ts-ignore
     private _token;
     private _modelUrl;
+    private _apiUrl: string;
     private _displayText: Record<string, string>;
     private _isFinal;
     private _onAnalysisComplete: string | null;
@@ -55,6 +56,7 @@ class FaceValidationComponent extends HTMLElement {
             // @ts-ignore
         this._token = '';
         this._modelUrl = '';
+        this._apiUrl = '';
         this._displayText = {};
         this._isFinal = false;
         this._onAnalysisComplete = null;
@@ -142,7 +144,7 @@ class FaceValidationComponent extends HTMLElement {
         // - on-analysis-complete: function name to call when analysis completes
         // - on-error: function name to call when error occurs
         // - on-user-cancel: function name to call when user cancels
-        return ['token', 'session-id', 'model-url', 'display-text', 'on-analysis-complete', 'on-error', 'on-user-cancel'];
+        return ['token', 'session-id', 'model-url', 'api-url', 'display-text', 'on-analysis-complete', 'on-error', 'on-user-cancel'];
     }
 
     async attributeChangedCallback (name: string, _: string, newValue: string) {
@@ -180,6 +182,11 @@ class FaceValidationComponent extends HTMLElement {
 
         if (name === 'on-user-cancel') {
             this._onUserCancel = newValue || null;
+        }
+
+        if (name === 'api-url') {
+            this._apiUrl = newValue;
+            if (this.shadowRoot?.innerHTML) await this.init();
         }
     }
 
@@ -472,7 +479,7 @@ class FaceValidationComponent extends HTMLElement {
         try {
             // TODO: externalize initial /verify call (token creation) to host app and
             // accept verification_token / main_server_url as inputs, similar to AWS FaceLivenessDetector.
-            const result = await verifyCapturedFrames(framesToSend);
+            const result = await verifyCapturedFrames(framesToSend, this._apiUrl);
 
             // Stop detection loop
             this._isRunning = false;
