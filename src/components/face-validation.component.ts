@@ -240,28 +240,54 @@ class FaceValidationComponent extends HTMLElement {
 
     async loadModels() {
         try {
-            // Configure TensorFlow.js to use CPU backend to avoid WASM initialization issues
-            // This matches the behavior when WASM files aren't available (like in standalone HTML)
+            // Force TensorFlow.js to use CPU backend only
             // TensorFlow.js is available globally when face-api.js is loaded
             const tf = (window as any).tf;
-            if (tf && typeof tf.setBackend === 'function') {
-                try {
-                    // Try to set CPU backend first (more reliable, no WASM files needed)
-                    await tf.setBackend('cpu');
-                    console.log('Face-WC: Using TensorFlow.js CPU backend');
-                } catch (cpuError) {
-                    // If CPU backend fails, wait for default backend to be ready
-                    // This will use whatever backend TensorFlow.js defaults to (likely CPU if WASM fails)
-                    if (typeof tf.ready === 'function') {
-                        await tf.ready();
-                        const backend = tf.getBackend();
-                        console.log('Face-WC: TensorFlow.js backend ready:', backend);
-                    }
+            
+            if (tf) {
+                // Wait for TensorFlow.js to be ready first
+                if (typeof tf.ready === 'function') {
+                    await tf.ready();
                 }
-            } else if (tf && typeof tf.ready === 'function') {
-                // If setBackend is not available, just wait for TensorFlow.js to be ready
-                await tf.ready();
-                console.log('Face-WC: TensorFlow.js ready');
+                
+                // Force CPU backend
+                if (typeof tf.setBackend === 'function') {
+                    try {
+                        // Try to remove other backends first (if supported)
+                        if (typeof tf.removeBackend === 'function') {
+                            try {
+                                if (typeof tf.findBackendFactory === 'function' && tf.findBackendFactory('webgl')) {
+                                    tf.removeBackend('webgl');
+                                }
+                                if (typeof tf.findBackendFactory === 'function' && tf.findBackendFactory('wasm')) {
+                                    tf.removeBackend('wasm');
+                                }
+                            } catch (removeError) {
+                                // Ignore errors when removing backends (not critical)
+                                console.debug('Face-WC: Could not remove other backends (may not be supported):', removeError);
+                            }
+                        }
+                        
+                        // Force CPU backend
+                        await tf.setBackend('cpu');
+                        
+                        // Verify CPU backend is actually set
+                        const currentBackend = typeof tf.getBackend === 'function' ? tf.getBackend() : 'unknown';
+                        if (currentBackend !== 'cpu') {
+                            console.warn(`Face-WC: Warning - Backend is ${currentBackend}, not CPU as requested`);
+                        } else {
+                            console.log('Face-WC: TensorFlow.js successfully forced to use CPU backend');
+                        }
+                    } catch (cpuError) {
+                        console.error('Face-WC: Failed to set CPU backend:', cpuError);
+                        throw new Error('CPU backend is required but could not be set');
+                    }
+                } else {
+                    const currentBackend = typeof tf.getBackend === 'function' ? tf.getBackend() : 'unknown';
+                    console.warn(`Face-WC: setBackend not available, current backend: ${currentBackend}`);
+                }
+            } else {
+                console.warn('Face-WC: TensorFlow.js not found on window object');
             }
             
             await faceapi.nets.tinyFaceDetector.loadFromUri(this._modelUrl);
