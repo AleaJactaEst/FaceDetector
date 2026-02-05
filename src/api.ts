@@ -14,31 +14,6 @@ type VerificationSummary = {
   raw: unknown;
 };
 
-async function requestVerificationToken(apiUrlBase: string) {
-  const response = await fetch(`${apiUrlBase}/verify`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Token request failed: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (data.status !== 200 || !data.data) {
-    const errorMsg = Array.isArray(data.errors) ? data.errors.join(', ') : 'Token request failed';
-    throw new Error(errorMsg);
-  }
-
-  return {
-    verificationToken: data.data.verification_token as string,
-    mainServerUrl: (data.data.main_server_url as string).replace(/\/+$/, ''),
-  };
-}
-
 function normalizeFrames(capturedFrames: string[]) {
   return capturedFrames.map((frame) => {
     let base64Data = frame;
@@ -172,14 +147,12 @@ function analyzeResults(resultData: any): VerificationSummary {
 export async function verifyCapturedFrames(
   capturedFrames: string[],
   apiUrl: string,
+  verificationToken: string,
   config?: VerificationApiConfig,
 ): Promise<VerificationSummary> {
 
-  // 1) Get verification token + main server URL from application server
-  const { verificationToken, mainServerUrl } = await requestVerificationToken(apiUrl);
-
   // 2) Send frames to main server
-  await sendVerificationToMainServer(mainServerUrl, verificationToken, capturedFrames, config);
+  await sendVerificationToMainServer(apiUrl, verificationToken, capturedFrames, config);
 
   // 3) Poll application server for final result
   const resultData = await pollForResult(apiUrl, verificationToken);
