@@ -1,6 +1,6 @@
 {
   "name": "face-wc",
-  "version": "0.0.13",
+  "version": "0.0.15",
   "type": "module",
   "description": "A web component for face validation using face-api.js",
   "main": "./dist/face-validation.iife.js",
@@ -25,6 +25,7 @@
   "author": "Vitaliy Kachan",
   "license": "MIT",
   "devDependencies": {
+    "terser": "^5.46.0",
     "typescript": "~5.9.3",
     "vite": "^7.2.4"
   },

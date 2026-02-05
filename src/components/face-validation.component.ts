@@ -240,6 +240,30 @@ class FaceValidationComponent extends HTMLElement {
 
     async loadModels() {
         try {
+            // Configure TensorFlow.js to use CPU backend to avoid WASM initialization issues
+            // This matches the behavior when WASM files aren't available (like in standalone HTML)
+            // TensorFlow.js is available globally when face-api.js is loaded
+            const tf = (window as any).tf;
+            if (tf && typeof tf.setBackend === 'function') {
+                try {
+                    // Try to set CPU backend first (more reliable, no WASM files needed)
+                    await tf.setBackend('cpu');
+                    console.log('Face-WC: Using TensorFlow.js CPU backend');
+                } catch (cpuError) {
+                    // If CPU backend fails, wait for default backend to be ready
+                    // This will use whatever backend TensorFlow.js defaults to (likely CPU if WASM fails)
+                    if (typeof tf.ready === 'function') {
+                        await tf.ready();
+                        const backend = tf.getBackend();
+                        console.log('Face-WC: TensorFlow.js backend ready:', backend);
+                    }
+                }
+            } else if (tf && typeof tf.ready === 'function') {
+                // If setBackend is not available, just wait for TensorFlow.js to be ready
+                await tf.ready();
+                console.log('Face-WC: TensorFlow.js ready');
+            }
+            
             await faceapi.nets.tinyFaceDetector.loadFromUri(this._modelUrl);
             this.setError();
             return true;
