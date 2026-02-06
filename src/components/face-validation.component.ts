@@ -57,7 +57,7 @@ class FaceValidationComponent extends HTMLElement {
         this._modelUrl = '';
         this._apiUrl = '';
         this._verificationToken = '';
-        this._verificationType = 'near_far';
+        this._verificationType = 'far_near';
         this._verificationModel = 'yolov11m';
         this._displayText = {};
         this._isFinal = false;
