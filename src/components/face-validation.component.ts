@@ -533,12 +533,12 @@ class FaceValidationComponent extends HTMLElement {
                 bubbles: true,
                 composed: true,
             }));
-
-            // Call function if specified in attribute
+            //
+            // // Call function if specified in attribute
             this.callAttributeFunction(this._onAnalysisComplete, result);
-
-            // Show result screen
-            this.showResult(result);
+            //
+            // // Show result screen
+            // this.showResult(result);
 
             // Once analysis is complete, mark component as "final" so cancel button can be ignored/hidden if desired
             this._isFinal = true;
