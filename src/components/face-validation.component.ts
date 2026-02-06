@@ -35,6 +35,8 @@ class FaceValidationComponent extends HTMLElement {
     private _modelUrl;
     private _apiUrl: string;
     private _verificationToken: string;
+    private _verificationType: string;
+    private _verificationModel: string;
     private _displayText: Record<string, string>;
     private _isFinal;
     private _onAnalysisComplete: string | null;
@@ -55,6 +57,8 @@ class FaceValidationComponent extends HTMLElement {
         this._modelUrl = '';
         this._apiUrl = '';
         this._verificationToken = '';
+        this._verificationType = 'near_far';
+        this._verificationModel = 'yolov11m';
         this._displayText = {};
         this._isFinal = false;
         this._onAnalysisComplete = null;
@@ -134,15 +138,17 @@ class FaceValidationComponent extends HTMLElement {
     }
 
     static get observedAttributes() {
-        // Align with AWS FaceLivenessDetector-style API: sessionId + displayText
-        // - session-id: alias for token
-        // - token: can still be used directly
-        // - model-url: where face-api model is hosted
-        // - display-text: JSON with all translated labels from parent
-        // - on-analysis-complete: function name to call when analysis completes
-        // - on-error: function name to call when error occurs
-        // - on-user-cancel: function name to call when user cancels
-        return ['model-url', 'api-url', 'verification-token', 'display-text', 'on-analysis-complete', 'on-error', 'on-user-cancel'];
+        return [
+            'model-url',
+            'api-url',
+            'verification-token',
+            'verification-model',
+            'verification-type',
+            'display-text',
+            'on-analysis-complete',
+            'on-error',
+            'on-user-cancel'
+        ];
     }
 
     async attributeChangedCallback (name: string, _: string, newValue: string) {
@@ -180,6 +186,14 @@ class FaceValidationComponent extends HTMLElement {
 
         if (name === 'verification-token') {
             this._verificationToken = newValue;
+        }
+
+        if (name === 'verification-model') {
+            this._verificationModel = newValue;
+        }
+
+        if (name === 'verification-type') {
+            this._verificationType = newValue;
         }
     }
 
@@ -522,7 +536,13 @@ class FaceValidationComponent extends HTMLElement {
         try {
             // TODO: externalize initial /verify call (token creation) to host app and
             // accept verification_token / main_server_url as inputs, similar to AWS FaceLivenessDetector.
-            const result = await verifyCapturedFrames(framesToSend, this._apiUrl, this._verificationToken);
+            const result = await verifyCapturedFrames(
+                framesToSend,
+                this._apiUrl,
+                this._verificationToken,
+                this._verificationModel,
+                this._verificationType
+            );
 
             // Stop detection loop
             this._isRunning = false;

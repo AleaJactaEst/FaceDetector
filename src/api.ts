@@ -1,6 +1,6 @@
-const CHALLENGE_TYPE = 'near_far';
+// const CHALLENGE_TYPE = 'near_far';
 const NEAR_FAR_MIN_RATIO = 1.15;
-const DEFAULT_DETECTOR_NAME = 'yolov11m';
+// const DEFAULT_DETECTOR_NAME = 'yolov11m';
 
 type VerificationApiConfig = {
   ageThreshold?: number;
@@ -28,6 +28,8 @@ async function sendVerificationToMainServer(
   mainServerUrl: string,
   verificationToken: string,
   capturedFrames: string[],
+  verificationModel: string,
+  verificationType: string,
   config?: VerificationApiConfig,
 ) {
   const images = normalizeFrames(capturedFrames);
@@ -41,8 +43,8 @@ async function sendVerificationToMainServer(
       verification_token: verificationToken,
       images,
       age_threshold: config?.ageThreshold ?? 18,
-      detector_name: DEFAULT_DETECTOR_NAME,
-      challenge_type: CHALLENGE_TYPE,
+      detector_name: verificationModel,
+      challenge_type: verificationType,
       near_far_min_ratio: NEAR_FAR_MIN_RATIO,
     }),
   });
@@ -150,11 +152,20 @@ export async function verifyCapturedFrames(
   capturedFrames: string[],
   apiUrl: string,
   verificationToken: string,
+  verificationModel: string,
+  verificationType: string,
   config?: VerificationApiConfig,
 ): Promise<Response> {
 
   // 2) Send frames to main server
-  return await sendVerificationToMainServer(apiUrl, verificationToken, capturedFrames, config);
+  return await sendVerificationToMainServer(
+      apiUrl,
+      verificationToken,
+      capturedFrames,
+      verificationModel,
+      verificationType,
+      config
+  );
 
   // // 3) Poll application server for final result
   // const resultData = await pollForResult(apiUrl, verificationToken);
