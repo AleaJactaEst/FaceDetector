@@ -14,7 +14,9 @@ export default defineConfig({
         lib: {
             entry: 'src/main.ts',
             name: 'FaceValidationWC',
-            formats: ['es'],
+            // Build as an IIFE bundle so there are no ES module
+            // `export` statements in the final output.
+            formats: ['iife'],
             fileName: () => 'face-validation.iife.js',
         },
 
