@@ -1,6 +1,6 @@
 {
-  "name": "face-wc",
-  "version": "0.0.21",
+  "name": "face-wcc",
+  "version": "0.0.1",
   "type": "module",
   "description": "A web component for face validation using face-api.js",
   "main": "./dist/face-validation.iife.js",
@@ -30,6 +30,17 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "@tensorflow/tfjs-backend-webgl": "^4.11.0",
+    "@tensorflow/tfjs-core": "^4.11.0",
+    "@vladmandic/face-api": "^1.7.15",
     "face-api.js": "^0.22.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AleaJactaEst/FaceDetector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AleaJactaEst/FaceDetector/issues"
+  },
+  "homepage": "https://github.com/AleaJactaEst/FaceDetector#readme"
 }
