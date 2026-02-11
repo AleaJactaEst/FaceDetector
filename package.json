@@ -32,8 +32,7 @@
   "dependencies": {
     "@tensorflow/tfjs-backend-webgl": "^4.11.0",
     "@tensorflow/tfjs-core": "^4.11.0",
-    "@vladmandic/face-api": "^1.7.15",
-    "face-api.js": "^0.22.2"
+    "@vladmandic/face-api": "^1.7.15"
   },
   "repository": {
     "type": "git",
