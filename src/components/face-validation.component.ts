@@ -1,6 +1,10 @@
-import * as faceapi from 'face-api.js';
 import { FACE_VALIDATION_TEMPLATE } from './face-validation.template.ts';
-import { FaceDetection } from 'face-api.js';
+import * as faceapi from '@vladmandic/face-api';
+import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-backend-webgl';
+
+await tf.setBackend('webgl');
+await tf.ready();
 import type { Phase } from '../interfaces/interfaces.ts';
 import { FAR_THRESHOLD_MULTIPLIER, NO_FACE_DETECTED_BACKLASH, FRAMES_TO_CAPTURE, FRAMES_FAR_DISTANCE, FRAMES_CLOSE_DISTANCE, INITIAL_DISTANCE_THRESHOLD, CLOSE_DISTANCE_PROGRESS_THRESHOLD } from '../constants/constants.ts';
 import FaceFrameService from '../services/face-frame.service.ts';
@@ -415,7 +419,7 @@ class FaceValidationComponent extends HTMLElement {
         requestAnimationFrame(loop);
     }
 
-    handleLivenessWorkflow(detection: FaceDetection, video: HTMLVideoElement) {
+    handleLivenessWorkflow(detection: any, video: HTMLVideoElement) {
         const canvas = this.shadowRoot?.querySelector('canvas');
         if (canvas) {
             const faceArea = detection.box.width * detection.box.height;
