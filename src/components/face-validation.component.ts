@@ -3,8 +3,10 @@ import * as faceapi from '@vladmandic/face-api';
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl';
 
-await tf.setBackend('webgl');
-await tf.ready();
+(async () => {
+    await tf.setBackend('webgl');
+    await tf.ready();
+})();
 import type { Phase } from '../interfaces/interfaces.ts';
 import { FAR_THRESHOLD_MULTIPLIER, NO_FACE_DETECTED_BACKLASH, FRAMES_TO_CAPTURE, FRAMES_FAR_DISTANCE, FRAMES_CLOSE_DISTANCE, INITIAL_DISTANCE_THRESHOLD, CLOSE_DISTANCE_PROGRESS_THRESHOLD } from '../constants/constants.ts';
 import FaceFrameService from '../services/face-frame.service.ts';

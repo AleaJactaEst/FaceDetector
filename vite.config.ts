@@ -9,7 +9,7 @@ export default defineConfig({
     build: {
         // 1. Target ES2015 to ensure modern syntax (like classes and arrow functions)
         // is transpiled down to a level Edge 18 and Safari 13 understand.
-        target: 'es2022',
+        target: 'es2015',
 
         lib: {
             entry: 'src/main.ts',
