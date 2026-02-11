@@ -14,7 +14,7 @@ export default defineConfig({
         lib: {
             entry: 'src/main.ts',
             name: 'FaceValidationWC',
-            formats: ['iife'],
+            formats: ['es'],
             fileName: () => 'face-validation.iife.js',
         },
 
