@@ -48,6 +48,10 @@ class FaceValidationComponent extends HTMLElement {
     private _onAnalysisComplete: string | null;
     private _onError: string | null;
     private _onUserCancel: string | null;
+    private _disableFeValidation: boolean;
+    private _phaseStartTime: number;
+    private _lastNoValidationFarCaptureTime: number;
+    private _lastNoValidationCloseCaptureTime: number;
 
     constructor() {
         super();
@@ -70,6 +74,10 @@ class FaceValidationComponent extends HTMLElement {
         this._onAnalysisComplete = null;
         this._onError = null;
         this._onUserCancel = null;
+        this._disableFeValidation = false;
+        this._phaseStartTime = 0;
+        this._lastNoValidationFarCaptureTime = 0;
+        this._lastNoValidationCloseCaptureTime = 0;
 
         this.checkOrientation = this.checkOrientation.bind(this);
     }
@@ -153,7 +161,8 @@ class FaceValidationComponent extends HTMLElement {
             'display-text',
             'on-analysis-complete',
             'on-error',
-            'on-user-cancel'
+            'on-user-cancel',
+            'disable-fe-validation'
         ];
     }
 
@@ -201,6 +210,10 @@ class FaceValidationComponent extends HTMLElement {
         if (name === 'verification-type') {
             this._verificationType = newValue;
         }
+
+        if (name === 'disable-fe-validation') {
+            this._disableFeValidation = newValue === 'true' || newValue === '';
+        }
     }
 
     async init() {
@@ -226,14 +239,20 @@ class FaceValidationComponent extends HTMLElement {
 
         if (this._isRunning) return;
 
-        const isModelAvailable = await this.loadModels();
-        if (!isModelAvailable) return;
+        if (!this._disableFeValidation) {
+            const isModelAvailable = await this.loadModels();
+            if (!isModelAvailable) return;
+        }
 
         const cameraStarted = await this.startCamera();
         if (!cameraStarted) return;
 
         this._isRunning = true;
-        this.detectFaces();
+        if (this._disableFeValidation) {
+            this.detectFacesNoValidation();
+        } else {
+            this.detectFaces();
+        }
     }
 
     public startVerifying() {
@@ -419,6 +438,83 @@ class FaceValidationComponent extends HTMLElement {
         };
 
         requestAnimationFrame(loop);
+    }
+
+    private static readonly NO_VALIDATION_WAITING_MS = 600;
+    private static readonly NO_VALIDATION_MIN_CAPTURE_INTERVAL_MS = 450;
+    private static readonly NO_VALIDATION_PHASE_DURATION_MS = 2500;
+
+    async detectFacesNoValidation() {
+        const video = this.shadowRoot?.querySelector('video') as HTMLVideoElement;
+        if (!video) return;
+
+        this._phaseStartTime = Date.now();
+        this._lastNoValidationFarCaptureTime = 0;
+        this._lastNoValidationCloseCaptureTime = 0;
+
+        const loop = () => {
+            if (!this._isRunning) return;
+
+            this.adjustCanvasDimension();
+            if (this.phase === 'MOVE_FORWARD') {
+                this.drawOvalGuide();
+            } else {
+                const canvas = this.shadowRoot?.querySelector('canvas');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            }
+
+            this.handleLivenessWorkflowNoValidation(video);
+            setTimeout(() => requestAnimationFrame(loop), 100);
+        };
+
+        requestAnimationFrame(loop);
+    }
+
+    private handleLivenessWorkflowNoValidation(_video: HTMLVideoElement) {
+        const now = Date.now();
+        const elapsed = now - this._phaseStartTime;
+
+        switch (this.phase) {
+            case 'WAITING':
+                this.updateStatus('hintTooCloseText');
+                if (elapsed >= FaceValidationComponent.NO_VALIDATION_WAITING_MS) {
+                    this.setPhase('MOVE_BACK');
+                }
+                break;
+
+            case 'MOVE_BACK': {
+                this.updateStatus('hintTooCloseText');
+                const progress = Math.min(100, (elapsed / FaceValidationComponent.NO_VALIDATION_PHASE_DURATION_MS) * 100);
+                const progressFill = this.shadowRoot?.querySelector('#fit-percentage-fill') as HTMLElement;
+                if (progressFill) progressFill.style.width = `${progress}%`;
+                if (now - this._lastNoValidationFarCaptureTime >= FaceValidationComponent.NO_VALIDATION_MIN_CAPTURE_INTERVAL_MS) {
+                    this.captureFrame('far');
+                    this._lastNoValidationFarCaptureTime = now;
+                }
+                if (this.farDistanceFrames.length >= FRAMES_FAR_DISTANCE) {
+                    this.setPhase('MOVE_FORWARD');
+                }
+                break;
+            }
+
+            case 'MOVE_FORWARD': {
+                this.updateStatus('hintMoveFaceFrontOfCameraText');
+                const progress = Math.min(100, (elapsed / FaceValidationComponent.NO_VALIDATION_PHASE_DURATION_MS) * 100);
+                this.setCloseDistanceProgression(progress);
+                if (now - this._lastNoValidationCloseCaptureTime >= FaceValidationComponent.NO_VALIDATION_MIN_CAPTURE_INTERVAL_MS) {
+                    this.captureFrame('close');
+                    this._lastNoValidationCloseCaptureTime = now;
+                }
+                if (this.farDistanceFrames.length >= FRAMES_FAR_DISTANCE &&
+                    this.closeDistanceFrames.length >= FRAMES_CLOSE_DISTANCE) {
+                    this.finishVerification();
+                }
+                break;
+            }
+        }
     }
 
     handleLivenessWorkflow(detection: any, video: HTMLVideoElement) {
@@ -775,7 +871,11 @@ class FaceValidationComponent extends HTMLElement {
                 errorWrapper.style.display = 'none';
                 this.setError(); // Clear UI
                 this._isRunning = true;
-                this.detectFaces(); // Restart loop
+                if (this._disableFeValidation) {
+                    this.detectFacesNoValidation();
+                } else {
+                    this.detectFaces();
+                }
                 resolve(true);
             } catch (e) {
                 console.error("Manual play failed", e);
@@ -785,6 +885,9 @@ class FaceValidationComponent extends HTMLElement {
 
     private setPhase(phase: Phase) {
         this.phase = phase;
+        if (this._disableFeValidation) {
+            this._phaseStartTime = Date.now();
+        }
 
         const recordingSign = this.shadowRoot?.querySelector('#recording-sign') as HTMLDivElement;
         if (recordingSign) recordingSign.style.display = 'none';
