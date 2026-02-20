@@ -52,6 +52,7 @@ class FaceValidationComponent extends HTMLElement {
     private _phaseStartTime: number;
     private _lastNoValidationFarCaptureTime: number;
     private _lastNoValidationCloseCaptureTime: number;
+    private _scoreThreshold: number;
 
     constructor() {
         super();
@@ -78,6 +79,7 @@ class FaceValidationComponent extends HTMLElement {
         this._phaseStartTime = 0;
         this._lastNoValidationFarCaptureTime = 0;
         this._lastNoValidationCloseCaptureTime = 0;
+        this._scoreThreshold = 0.5;
 
         this.checkOrientation = this.checkOrientation.bind(this);
     }
@@ -162,7 +164,8 @@ class FaceValidationComponent extends HTMLElement {
             'on-analysis-complete',
             'on-error',
             'on-user-cancel',
-            'disable-fe-validation'
+            'disable-fe-validation',
+            'score-threshold'
         ];
     }
 
@@ -213,6 +216,11 @@ class FaceValidationComponent extends HTMLElement {
 
         if (name === 'disable-fe-validation') {
             this._disableFeValidation = newValue === 'true' || newValue === '';
+        }
+
+        if (name === 'score-threshold') {
+            const parsed = parseFloat(newValue);
+            this._scoreThreshold = Number.isFinite(parsed) ? parsed : 1;
         }
     }
 
@@ -395,7 +403,7 @@ class FaceValidationComponent extends HTMLElement {
 
     async detectFaces() {
         const video = this.shadowRoot?.querySelector('video') as HTMLVideoElement;
-        const options = new faceapi.TinyFaceDetectorOptions();
+        const options = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: this._scoreThreshold });
 
         const loop = async () => {
             if (!this._isRunning) return;
