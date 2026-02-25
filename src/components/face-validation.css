@@ -153,6 +153,10 @@ video, canvas {
     object-fit: cover; /* Ensures video fills the area without stretching */
 }
 
+video {
+    transform: scaleX(-1);
+}
+
 #info-box {
     position: absolute;
     width: 100%;
